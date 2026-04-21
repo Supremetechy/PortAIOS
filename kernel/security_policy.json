@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "resource_type": "directory",
+      "action": "read",
+      "min_access_level": "guest",
+      "required_groups": [],
+      "require_factors": [],
+      "require_all_factors": true,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "Allow directory listing at guest level"
+    },
+    {
+      "resource_type": "file",
+      "action": "read",
+      "min_access_level": "restricted",
+      "required_groups": [],
+      "require_factors": [],
+      "require_all_factors": true,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "Allow file read at restricted level"
+    },
+    {
+      "resource_type": "directory",
+      "action": "write",
+      "min_access_level": "standard",
+      "required_groups": [],
+      "require_factors": ["knowledge"],
+      "require_all_factors": false,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "Directory write requires knowledge factor"
+    },
+    {
+      "resource_type": "file",
+      "action": "write",
+      "min_access_level": "standard",
+      "required_groups": [],
+      "require_factors": ["knowledge"],
+      "require_all_factors": false,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "File write requires knowledge factor"
+    },
+    {
+      "resource_type": "file",
+      "action": "delete",
+      "min_access_level": "admin",
+      "required_groups": [],
+      "require_factors": ["knowledge", "possession"],
+      "require_all_factors": true,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "File delete requires knowledge + possession"
+    },
+    {
+      "resource_type": "password_vault",
+      "action": "read",
+      "min_access_level": "owner",
+      "required_groups": [],
+      "require_factors": ["knowledge", "biometric"],
+      "require_all_factors": true,
+      "allow_owner_only": true,
+      "deny_if_locked": true,
+      "description": "Vault read owner-only with knowledge + biometric"
+    },
+    {
+      "resource_type": "browser_history",
+      "action": "read",
+      "min_access_level": "owner",
+      "required_groups": [],
+      "require_factors": ["knowledge"],
+      "require_all_factors": false,
+      "allow_owner_only": true,
+      "deny_if_locked": true,
+      "description": "History read owner-only with knowledge"
+    },
+    {
+      "resource_type": "agent",
+      "action": "manage",
+      "min_access_level": "owner",
+      "required_groups": [],
+      "require_factors": ["knowledge", "biometric", "possession"],
+      "require_all_factors": true,
+      "allow_owner_only": true,
+      "deny_if_locked": true,
+      "description": "Agent management owner-only with 3 factors"
+    },
+    {
+      "resource_type": "audio",
+      "action": "read",
+      "min_access_level": "standard",
+      "required_groups": ["voice"],
+      "require_factors": ["knowledge"],
+      "require_all_factors": false,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "Audio capture requires voice group"
+    },
+    {
+      "resource_type": "audio",
+      "action": "write",
+      "min_access_level": "standard",
+      "required_groups": ["voice"],
+      "require_factors": ["knowledge"],
+      "require_all_factors": false,
+      "allow_owner_only": false,
+      "deny_if_locked": true,
+      "description": "Audio playback requires voice group"
+    }
+  ]
+}

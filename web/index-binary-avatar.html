@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS — Neural Interface Onboarding</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <!-- Three.js loaded via esm.sh in binary-avatar.js — no import map needed -->
+    <style>
+        /* ══════════════════════════════════════════════════════════
+           JOHNNY MNEMONIC / LO-TEK CYBERSPACE THEME OVERRIDE
+           Replaces the default amber command-bridge palette with
+           Matrix green, electric cyan, CRT black.
+           ══════════════════════════════════════════════════════════ */
+        :root {
+          --bg-0:   #000000;
+          --bg-1:   #020a04;
+          --bg-2:   #041208;
+          --ink-0:  #00ff41;
+          --ink-1:  #00cc33;
+          --ink-2:  #007a1f;
+          --line:   rgba(0, 255, 65, 0.08);
+          --line-2: rgba(0, 255, 65, 0.20);
+
+          --accent:      #00ffff;
+          --accent-hi:   #80ffff;
+          --accent-dim:  #007a7a;
+          --accent-glow: 0, 255, 255;
+
+          --live:      #00ff41;
+          --live-glow: 0, 255, 65;
+
+          --f-display: 'JetBrains Mono', 'Courier New', monospace;
+          --f-body:    'JetBrains Mono', 'Courier New', monospace;
+          --f-mono:    'JetBrains Mono', 'Courier New', monospace;
+        }
+
+        html, body {
+          background: #000;
+          color: #00ff41;
+          font-family: 'JetBrains Mono', 'Courier New', monospace;
+        }
+
+        /* ── Background layers: cyberspace grid ── */
+        .bg-grid {
+          background-image:
+            linear-gradient(rgba(0,255,65,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,255,65,0.06) 1px, transparent 1px);
+          background-size: 48px 48px;
+          opacity: 0.7;
+        }
+        .bg-glow {
+          background:
+            radial-gradient(ellipse 50% 40% at 30% 40%, rgba(0,255,65,0.10), transparent 60%),
+            radial-gradient(ellipse 40% 30% at 75% 65%, rgba(0,255,255,0.06), transparent 70%);
+        }
+
+        /* ── Telemetry strip ── */
+        .telemetry {
+          border-bottom-color: rgba(0,255,65,0.15);
+          background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+        }
+        .tel-dot {
+          background: #00ff41;
+          box-shadow: 0 0 10px rgba(0,255,65,0.9);
+        }
+        .tel-clock { color: #00ffff; }
+
+        /* ── Header ── */
+        h1 { font-family: 'JetBrains Mono', monospace; font-weight: 700; letter-spacing: -0.01em; }
+        .h1-label { color: #00cc33; }
+        .h1-emph { color: #00ffff; font-style: normal; text-shadow: 0 0 20px rgba(0,255,255,0.4); }
+        .eyebrow .mark { color: #00ff41; }
+
+        /* ── Progress gauge ── */
+        .gauge-fill {
+          background: linear-gradient(90deg, #007a1f, #00ff41);
+          box-shadow: 0 0 16px rgba(0,255,65,0.6), inset 0 0 0 1px rgba(0,255,65,0.5);
+        }
+        .gauge-readout { color: #00ffff; }
+
+        /* ── Panels ── */
+        .panel {
+          background: linear-gradient(180deg, rgba(0,20,8,0.6), rgba(0,10,4,0.8));
+          border: 1px solid rgba(0,255,65,0.15);
+          backdrop-filter: blur(6px);
+        }
+        .panel::before {
+          background: linear-gradient(90deg, transparent, rgba(0,255,65,0.12), transparent);
+        }
+        .panel-corners span { border-color: #00ff41; }
+
+        /* ── Avatar pod ── */
+        .pod-status { color: #00ff41; }
+        .pulse {
+          background: #00ff41;
+          box-shadow: 0 0 12px rgba(0,255,65,0.9);
+        }
+        .pod-stage {
+          background:
+            radial-gradient(ellipse at 50% 40%, rgba(0,255,65,0.08), transparent 65%),
+            linear-gradient(180deg, #010d05, #000000);
+          box-shadow: inset 0 0 0 1px rgba(0,255,65,0.1), inset 0 40px 80px -40px rgba(0,255,65,0.10);
+        }
+        .hud-k { color: #007a1f; }
+        .hud-v { color: #00ffff; }
+        .hud-bars span { background: #004d13; }
+        .hud-bars.active span { background: #00ff41; }
+
+        /* ── Content panel ── */
+        .meta-k { color: #00ff41; }
+        .meta-v { color: #00ffff; }
+        .content-panel h2 {
+          font-family: 'JetBrains Mono', monospace;
+          color: #00ff41;
+          text-shadow: 0 0 15px rgba(0,255,65,0.3);
+        }
+        #agent-line { color: #00cc33; }
+        .content-footer { border-top-color: rgba(0,255,65,0.12); color: #007a1f; }
+
+        /* ── Buttons ── */
+        .btn-primary {
+          background: #00ff41;
+          color: #000;
+          box-shadow:
+            0 0 0 1px rgba(0,255,65,0.5),
+            0 10px 30px -10px rgba(0,255,65,0.5),
+            inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        .btn-primary:hover {
+          background: #00ffff;
+          box-shadow:
+            0 0 0 1px rgba(0,255,255,0.6),
+            0 14px 36px -10px rgba(0,255,255,0.7),
+            inset 0 1px 0 rgba(255,255,255,0.3);
+        }
+        #prev-button {
+          color: #00cc33 !important;
+          border-color: rgba(0,255,65,0.25) !important;
+        }
+        #prev-button:hover {
+          border-color: #00ff41 !important;
+          color: #00ff41 !important;
+          background: rgba(0,255,65,0.06) !important;
+        }
+
+        /* ── Signature ── */
+        .signature { color: #007a1f; }
+
+        /* ── Boot animation: green blur ── */
+        @keyframes boot {
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+
+        /* ── Scanline overlay across entire page ── */
+        body::after {
+          content: '';
+          position: fixed; inset: 0; z-index: 9999;
+          pointer-events: none;
+          background: repeating-linear-gradient(
+            0deg,
+            transparent 0px, transparent 2px,
+            rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px
+          );
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           AVATAR-SPECIFIC STYLES
+           ══════════════════════════════════════════════════════════ */
+        #agent-avatar {
+            position: relative;
+            width: 100%; height: 100%; min-height: 400px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #binary-avatar-container {
+            width: 100%; height: 100%;
+            position: absolute; inset: 0;
+        }
+
+        /* Status badge */
+        #avatar-status {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0,0,0,0.75);
+            border: 1px solid rgba(0,255,65,0.3);
+            padding: 4px 10px;
+            font: 500 9px/1 'JetBrains Mono', monospace;
+            letter-spacing: 0.2em; text-transform: uppercase;
+            color: #00ff41; z-index: 10; border-radius: 3px;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 6px; height: 6px; border-radius: 50%;
+            margin-right: 6px;
+            background: #00ff41;
+            box-shadow: 0 0 8px #00ff41;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        /* CRT scanlines on avatar */
+        #agent-avatar::after {
+            content: '';
+            position: absolute; inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg, transparent 0px, transparent 2px,
+                rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px
+            );
+            z-index: 5;
+        }
+
+        /* Voice controls */
+        #voice-controls {
+            position: absolute; bottom: 10px; left: 50%;
+            transform: translateX(-50%);
+            display: flex; align-items: center; gap: 10px;
+            z-index: 10;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(0,255,65,0.25);
+            border-radius: 20px; padding: 6px 14px;
+            backdrop-filter: blur(4px);
+        }
+        #voice-controls .mic-btn {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: transparent;
+            border: 1px solid rgba(0,255,65,0.4);
+            color: #00ff41; cursor: pointer; font-size: 13px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.3s;
+        }
+        #voice-controls .mic-btn:hover {
+            border-color: #00ff41;
+            box-shadow: 0 0 8px rgba(0,255,65,0.3);
+        }
+        #voice-controls .mic-btn.listening {
+            border-color: #00ffff;
+            box-shadow: 0 0 14px rgba(0,255,255,0.4);
+            animation: pulse 1s ease-in-out infinite;
+        }
+        #voice-controls .voice-text {
+            font: 400 9px/1 'JetBrains Mono', monospace;
+            color: rgba(0,255,65,0.5);
+            letter-spacing: 0.15em; text-transform: uppercase;
+        }
+
+        /* Placeholder */
+        #avatar-placeholder {
+            position: absolute; inset: 0; display: none;
+            align-items: center; justify-content: center;
+            flex-direction: column; gap: 10px;
+            font: 400 10px/1 'JetBrains Mono', monospace;
+            letter-spacing: 0.25em; color: rgba(0,255,65,0.3);
+            text-transform: uppercase;
+        }
+        .loader-ring {
+          border-color: rgba(0,255,65,0.15);
+          border-top-color: #00ff41;
+        }
+        #avatar-video { display: none; }
+        #binary-avatar-container:not(:empty) ~ #avatar-placeholder { display: none !important; }
+
+        /* ── Corner brackets (full page) ── */
+        .corner-bracket {
+          position: fixed; z-index: 8; pointer-events: none;
+          width: 24px; height: 24px;
+          border: 1px solid rgba(0,255,65,0.3);
+        }
+        .cb-tl { top: 4px; left: 4px; border-right: none; border-bottom: none; }
+        .cb-tr { top: 4px; right: 4px; border-left: none; border-bottom: none; }
+        .cb-bl { bottom: 4px; left: 4px; border-right: none; border-top: none; }
+        .cb-br { bottom: 4px; right: 4px; border-left: none; border-top: none; }
+    </style>
+</head>
+<body>
+    <!-- Corner brackets -->
+    <div class="corner-bracket cb-tl"></div>
+    <div class="corner-bracket cb-tr"></div>
+    <div class="corner-bracket cb-bl"></div>
+    <div class="corner-bracket cb-br"></div>
+
+    <!-- Background layers -->
+    <div class="bg-layer bg-grid"></div>
+    <div class="bg-layer bg-glow"></div>
+    <div class="bg-layer bg-noise"></div>
+    <div class="bg-layer bg-vignette"></div>
+
+    <!-- Telemetry strip -->
+    <div class="telemetry">
+        <div class="tel-item"><span class="tel-dot"></span> AIOS</div>
+        <div class="tel-item">STATUS <span style="color:var(--live);">ONLINE</span></div>
+        <div class="tel-item" id="tel-tts">TTS <span style="color:var(--ink-2);">DETECTING</span></div>
+        <div class="tel-clock" id="tel-clock">--:--:--</div>
+    </div>
+
+    <div id="app">
+        <!-- Header -->
+        <header class="boot" style="--d:0.1s">
+            <div class="eyebrow">
+                <span class="mark">◆</span>
+                <span>AIOS</span>
+                <span class="mark-sep">/</span>
+                <span>NEURAL INTERFACE</span>
+                <span class="mark-sep">/</span>
+                <span>ONBOARDING</span>
+            </div>
+            <h1>
+                <span class="h1-label">Setup</span>
+                <span class="h1-emph">Wizard</span>
+            </h1>
+            <div class="progress-gauge">
+                <div class="gauge-track">
+                    <div class="gauge-fill" id="gauge-fill" style="width:20%"></div>
+                    <div class="gauge-ticks" id="gauge-ticks"></div>
+                </div>
+                <div class="gauge-readout">
+                    <span id="step-num">1</span>
+                    <span class="gauge-sep">/</span>
+                    <span id="step-total">5</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main layout -->
+        <main>
+            <!-- Avatar pod (left) -->
+            <div class="panel avatar-pod boot" style="--d:0.25s">
+                <div class="pod-header">
+                    <div class="pod-tag">AGENT <em>AVATAR</em></div>
+                    <div class="pod-status"><span class="pulse"></span> LIVE</div>
+                </div>
+                <div class="pod-stage" id="agent-avatar">
+                    <div id="binary-avatar-container"></div>
+                    <div id="avatar-status">
+                        <span class="status-dot"></span>
+                        <span id="avatar-status-text">Initializing...</span>
+                    </div>
+                    <div id="avatar-placeholder">
+                        <div class="loader-ring"></div>
+                        <span>Loading Neural Interface</span>
+                    </div>
+                    <div id="voice-controls">
+                        <button class="mic-btn" id="avatar-mic-btn" title="Toggle voice">🎤</button>
+                        <span class="voice-text" id="avatar-voice-status">Voice off</span>
+                    </div>
+                    <video id="avatar-video"></video>
+                </div>
+                <div class="pod-footer">
+                    <div class="hud-line"><span class="hud-k">SYS</span> <span class="hud-v" id="hud-cpu">--</span></div>
+                    <div class="hud-line"><span class="hud-k">MEM</span> <span class="hud-v" id="hud-mem">--</span></div>
+                    <div class="hud-line"><span class="hud-k">VOL</span>
+                        <div class="hud-bars" id="hud-vol-bars">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content panel (right) -->
+            <div class="panel content-panel boot" style="--d:0.4s" id="onboarding-content">
+                <div class="content-meta">
+                    <span class="meta-k">STEP</span>
+                    <span class="meta-v" id="meta-step-type">WELCOME</span>
+                </div>
+                <h2 id="step-title">Welcome to AIOS!</h2>
+                <p id="agent-line">I am your personal AI Agent. Let's get you set up.</p>
+                <div class="actions">
+                    <button class="btn btn-primary" id="next-button">
+                        <span class="btn-glyph">→</span>
+                        <span>Next</span>
+                    </button>
+                </div>
+                <div class="content-footer">
+                    <span>Say "next" or "back" to navigate</span>
+                    <span>Press Enter to continue</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Signature -->
+        <div class="signature boot" style="--d:0.55s">
+            <span>AIOS v1.0 // Neural Interface</span>
+            <span>Johnny Mnemonic Architecture</span>
+        </div>
+    </div>
+
+    <!-- Eel JavaScript bridge -->
+    <script type="text/javascript" src="/eel.js"></script>
+
+    <!-- Binary Avatar System -->
+    <script type="module">
+        import { AvatarController } from './avatar-controller.js';
+
+        window.AIOS = window.AIOS || {};
+
+        // ── Clock ──
+        function updateClock() {
+            const now = new Date();
+            const el = document.getElementById('tel-clock');
+            if (el) el.textContent = now.toTimeString().slice(0, 8);
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // ── Initialize binary avatar ──
+        async function initBinaryAvatar() {
+            console.log('[AIOS] Initializing Johnny Mnemonic avatar...');
+            const container = document.getElementById('binary-avatar-container');
+            const statusText = document.getElementById('avatar-status-text');
+
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) throw new Error('WebGL not supported');
+
+                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+                window.AIOS.avatar = new AvatarController(container, {
+                    colorPalette: 'matrix',
+                    digitCount: isMobile ? 4000 : 7000,
+                    rainCount: isMobile ? 400 : 900,
+                    enableCRT: !isMobile,
+                    enableChromatic: !isMobile,
+                    enableBloom: true,
+                    enableDataRain: true,
+                    enableHoloScan: true
+                });
+
+                statusText.textContent = 'Online';
+                document.getElementById('tel-tts').innerHTML =
+                    'TTS <span style="color:var(--live);">READY</span>';
+
+                // Global API for Eel callbacks
+                window.speakText = async (text, emotion = 'neutral') => {
+                    if (window.AIOS.avatar) {
+                        await window.AIOS.avatar.speak(text, { emotion });
+                    }
+                };
+                window.setAvatarActivity = (activity) => {
+                    if (window.AIOS.avatar) {
+                        window.AIOS.avatar.renderer.setActivity(activity);
+                    }
+                };
+                window.setAvatarEmotion = (emotion) => {
+                    if (window.AIOS.avatar) {
+                        window.AIOS.avatar.setEmotion(emotion);
+                    }
+                };
+
+                // HUD volume bars
+                setInterval(() => {
+                    if (!window.AIOS.avatar) return;
+                    const vol = window.AIOS.avatar.renderer.state.volume;
+                    const bars = document.querySelectorAll('#hud-vol-bars span');
+                    const barsContainer = document.getElementById('hud-vol-bars');
+                    barsContainer.classList.toggle('active', vol > 0.05);
+                    bars.forEach((bar, i) => {
+                        const threshold = (i + 1) / bars.length;
+                        bar.style.height = vol >= threshold ? '100%' : '30%';
+                    });
+                }, 100);
+
+                // Greet after 1s
+                setTimeout(() => {
+                    if (window.AIOS.avatar) {
+                        window.AIOS.avatar.speak(
+                            "Welcome to the AIOS setup wizard. I'm here to help you get started.",
+                            { emotion: 'happy' }
+                        );
+                    }
+                }, 1000);
+
+            } catch (error) {
+                console.error('[AIOS] Avatar init failed:', error);
+                statusText.textContent = 'Fallback Mode';
+                document.getElementById('avatar-placeholder').style.display = 'flex';
+            }
+        }
+
+        // ── Voice input (in-avatar mic button) ──
+        function initAvatarVoice() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return;
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            let isListening = false;
+            const micBtn = document.getElementById('avatar-mic-btn');
+            const voiceStatus = document.getElementById('avatar-voice-status');
+
+            function startListening() {
+                try {
+                    recognition.start();
+                    isListening = true;
+                    micBtn.classList.add('listening');
+                    voiceStatus.textContent = 'Listening...';
+                } catch(e) {}
+            }
+
+            function stopListening() {
+                recognition.stop();
+                isListening = false;
+                micBtn.classList.remove('listening');
+                voiceStatus.textContent = 'Voice off';
+            }
+
+            micBtn.addEventListener('click', () => {
+                if (isListening) stopListening();
+                else startListening();
+            });
+
+            recognition.onresult = (event) => {
+                let final = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        final += event.results[i][0].transcript;
+                    }
+                }
+                if (final) handleVoiceCommand(final.trim());
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error === 'no-speech' || event.error === 'aborted') return;
+            };
+
+            recognition.onend = () => {
+                if (isListening) {
+                    setTimeout(() => { if (isListening) startListening(); }, 200);
+                }
+            };
+        }
+
+        async function handleVoiceCommand(text) {
+            const lower = text.toLowerCase();
+            console.log('[Voice]', text);
+
+            // Strip wake words
+            const cleaned = text.replace(/^(hey aios|aios|computer)\s*/i, '').trim();
+
+            if (/\b(next|continue|proceed)\b/i.test(lower)) {
+                document.getElementById('next-button').click();
+                return;
+            }
+            if (/\b(back|previous)\b/i.test(lower)) {
+                const prevBtn = document.getElementById('prev-button');
+                if (prevBtn) prevBtn.click();
+                return;
+            }
+            if (/\b(launch|start|boot)\b/i.test(lower)) {
+                if (typeof eel !== 'undefined' && eel.launch_aios) {
+                    window.AIOS?.avatar?.speak("Initiating kernel launch.", { emotion: 'excited' });
+                    await eel.launch_aios()();
+                }
+                return;
+            }
+            if (/\b(status|system)\b/i.test(lower)) {
+                const cpu = document.getElementById('hud-cpu').textContent;
+                const mem = document.getElementById('hud-mem').textContent;
+                window.AIOS?.avatar?.speak(
+                    `System status: CPU ${cpu}, Memory ${mem}. All systems nominal.`,
+                    { emotion: 'neutral' }
+                );
+                return;
+            }
+            if (/\b(hello|hi|greetings)\b/i.test(lower)) {
+                window.AIOS?.avatar?.speak("Hello! How can I assist you?", { emotion: 'happy' });
+                return;
+            }
+
+            // Unrecognized
+            window.AIOS?.avatar?.speak(
+                `I heard: "${cleaned}". Try saying next, back, launch, or status.`,
+                { emotion: 'neutral' }
+            );
+        }
+
+        // ── System stats polling ──
+        async function pollStats() {
+            if (typeof eel === 'undefined' || !eel.get_system_stats) return;
+            try {
+                const stats = await eel.get_system_stats()();
+                if (stats) {
+                    document.getElementById('hud-cpu').textContent =
+                        Math.round(stats.cpu_usage) + '%';
+                    document.getElementById('hud-mem').textContent =
+                        Math.round(stats.memory_usage) + '%';
+                }
+            } catch(e) {}
+        }
+        setInterval(pollStats, 4000);
+
+        // ── Boot ──
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                initBinaryAvatar();
+                initAvatarVoice();
+            });
+        } else {
+            initBinaryAvatar();
+            initAvatarVoice();
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (window.AIOS?.avatar) window.AIOS.avatar.destroy();
+        });
+    </script>
+
+    <!-- Onboarding step logic -->
+    <script type="text/javascript" src="script.js"></script>
+
+    <!-- Eel bridge exposure (waits for ES module init) -->
+    <script type="text/javascript">
+        function waitForAvatarFns() {
+            if (typeof window.speakText === 'function' &&
+                typeof window.setAvatarActivity === 'function' &&
+                typeof window.setAvatarEmotion === 'function') {
+                if (typeof eel !== 'undefined') {
+                    eel.expose(window.speakText, 'speakText');
+                    eel.expose(window.setAvatarActivity, 'setAvatarActivity');
+                    eel.expose(window.setAvatarEmotion, 'setAvatarEmotion');
+                    console.log('[AIOS] Avatar functions exposed to Eel');
+                }
+                setupEnhancedStepLoader();
+            } else {
+                setTimeout(waitForAvatarFns, 100);
+            }
+        }
+
+        function setupEnhancedStepLoader() {
+            const originalLoadStep = window.loadStep;
+            window.loadStep = async function(stepData) {
+                if (window.AIOS?.avatar) {
+                    const emotionMap = {
+                        'welcome': 'happy',
+                        'configure': 'neutral',
+                        'install': 'thinking',
+                        'complete': 'excited',
+                        'error': 'error'
+                    };
+                    const emotion = emotionMap[stepData.type] || 'neutral';
+                    window.setAvatarEmotion(emotion);
+                    if (stepData.speech) {
+                        await window.speakText(stepData.speech, emotion);
+                    }
+                }
+                // Update progress gauge
+                if (stepData.index !== undefined && stepData.total_steps) {
+                    const pct = ((stepData.index + 1) / stepData.total_steps * 100);
+                    const gaugeFill = document.getElementById('gauge-fill');
+                    if (gaugeFill) gaugeFill.style.width = pct + '%';
+                    const stepNum = document.getElementById('step-num');
+                    if (stepNum) stepNum.textContent = stepData.index + 1;
+                    const stepTotal = document.getElementById('step-total');
+                    if (stepTotal) stepTotal.textContent = stepData.total_steps;
+                    const metaType = document.getElementById('meta-step-type');
+                    if (metaType) metaType.textContent = (stepData.type || 'configure').toUpperCase();
+                }
+                if (originalLoadStep) {
+                    return originalLoadStep(stepData);
+                }
+            };
+        }
+
+        waitForAvatarFns();
+    </script>
+</body>
+</html>

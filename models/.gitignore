@@ -1,0 +1,8 @@
+# Ignore large model files (download separately)
+*.gguf
+*.bin
+*.safetensors
+
+# Keep the README
+!README.md
+!.gitignore

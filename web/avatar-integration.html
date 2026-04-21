@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS — Johnny Mnemonic Neural Interface</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Syne+Mono&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --g0:       #00ff9d;
+            --g1:       #00e87d;
+            --g2:       #00a855;
+            --g3:       #004d28;
+            --g4:       #001a0d;
+            --cyan:     #00f5ff;
+            --cyan-d:   #00b8c4;
+            --magenta:  #ff0080;
+            --mag-d:    #c40062;
+            --amber:    #ffc400;
+            --amber-d:  #b88900;
+            --red:      #ff1744;
+            --red-d:    #b2102f;
+            --white:    #e8fff4;
+            --bg:       #010608;
+            --holo-1:   rgba(0,245,255,0.12);
+            --holo-2:   rgba(0,255,157,0.08);
+            --holo-3:   rgba(255,0,128,0.06);
+            --card-bg:  rgba(1,14,9,0.72);
+            --card-border: rgba(0,255,157,0.18);
+            --font-display: 'Orbitron', monospace;
+            --font-mono:    'Share Tech Mono', 'Courier New', monospace;
+            --font-data:    'Syne Mono', monospace;
+        }
+
+        html, body {
+            height: 100%; overflow: hidden;
+            background: var(--bg);
+            color: var(--g0);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
+        }
+
+        /*
+         * ═══════════════════════════════════════════
+         *  FULL-SCREEN LAYER STACK
+         *  z-index 1  →  #env-layer       (SpatialEnvironmentRenderer — opaque WebGL canvas)
+         *  z-index 2  →  #avatar-layer    (BinaryAvatarRenderer — alpha:true WebGL canvas)
+         *  z-index 4  →  .edge-vignette
+         *  z-index 5  →  .scanline-overlay
+         *  z-index 10 →  .hud             (panels, speech bubble)
+         *  z-index 15 →  .corner-bracket
+         *  z-index 20 →  #top-bar / #bottom-bar
+         * ═══════════════════════════════════════════
+         */
+
+        #env-layer,
+        #avatar-layer {
+            position: fixed;
+            inset: 0;
+            /* canvas injected by Three.js fills 100%×100% of this container */
+        }
+
+        /* Opaque — owns the background colour */
+        #env-layer {
+            z-index: 1;
+        }
+
+        /* Transparent — binary head floats over the environment */
+        #avatar-layer {
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Three.js injects a <canvas>; make sure it fills the container */
+        #env-layer canvas,
+        #avatar-layer canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* ─────────────────────────────────────────────
+           HUD BASE
+        ───────────────────────────────────────────── */
+        .hud { position: fixed; z-index: 10; pointer-events: none; }
+        .hud-interactive { pointer-events: auto; }
+
+        /* ─────────────────────────────────────────────
+           HOLOGRAPHIC CARD
+        ───────────────────────────────────────────── */
+        .holo-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        .holo-card::before {
+            content: '';
+            position: absolute; inset: 0; z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 40% at 20% 30%, var(--holo-1) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 70%, var(--holo-2) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 60% at 50% 10%, var(--holo-3) 0%, transparent 70%);
+            pointer-events: none;
+            animation: holo-drift 8s ease-in-out infinite alternate;
+        }
+        .holo-card::after {
+            content: '';
+            position: absolute; inset: 0; z-index: 1;
+            background: linear-gradient(
+                135deg,
+                transparent 0%, transparent 40%,
+                rgba(0,245,255,0.15) 45%,
+                rgba(0,255,157,0.22) 50%,
+                rgba(255,255,255,0.08) 52%,
+                transparent 57%, transparent 100%
+            );
+            background-size: 300% 300%;
+            animation: edge-shine 5s ease-in-out infinite;
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        .holo-card > * { position: relative; z-index: 2; }
+
+        @keyframes holo-drift {
+            0%   { opacity: 0.6; transform: translateX(-4px) translateY(-2px) scale(1.01); }
+            33%  { opacity: 0.9; }
+            66%  { opacity: 0.7; }
+            100% { opacity: 1.0; transform: translateX(4px) translateY(2px) scale(1); }
+        }
+        @keyframes edge-shine {
+            0%   { background-position: 200% 200%; opacity: 0.6; }
+            40%  { background-position: 100% 100%; opacity: 1; }
+            60%  { background-position: 0% 0%;     opacity: 0.8; }
+            100% { background-position: -100% -100%; opacity: 0.5; }
+        }
+
+        .holo-card.glow-edge {
+            box-shadow:
+                0 0 0 1px rgba(0,255,157,0.08),
+                0 0 12px rgba(0,255,157,0.06),
+                inset 0 1px 0 rgba(0,255,157,0.12),
+                inset 0 -1px 0 rgba(0,245,255,0.06);
+        }
+        .holo-card.glow-edge:hover {
+            border-color: rgba(0,255,157,0.35);
+            box-shadow:
+                0 0 0 1px rgba(0,255,157,0.15),
+                0 0 24px rgba(0,255,157,0.12),
+                0 0 48px rgba(0,245,255,0.06),
+                inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        /* ─────────────────────────────────────────────
+           TOP BAR
+        ───────────────────────────────────────────── */
+        #top-bar {
+            top: 0; left: 0; right: 0; z-index: 20;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 24px; height: 52px;
+            background: linear-gradient(180deg,
+                rgba(1,6,8,0.95) 0%, rgba(1,6,8,0.7) 80%, transparent 100%);
+            border-bottom: 1px solid rgba(0,255,157,0.12);
+            box-shadow: 0 1px 0 rgba(0,255,157,0.06), 0 2px 20px rgba(0,0,0,0.6);
+        }
+        .logo {
+            font-family: var(--font-display);
+            font-size: 14px; font-weight: 900; letter-spacing: 0.3em;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--g0) 0%, var(--cyan) 40%, var(--g0) 70%, var(--white) 100%);
+            background-size: 300% 100%;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: logo-shimmer 6s ease-in-out infinite;
+            filter: drop-shadow(0 0 8px rgba(0,255,157,0.4));
+        }
+        @keyframes logo-shimmer {
+            0%, 100% { background-position: 0% 0%; }
+            50%       { background-position: 100% 0%; }
+        }
+        .logo-sub {
+            font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.45em;
+            color: rgba(0,255,157,0.45); display: block; margin-top: 1px;
+            -webkit-text-fill-color: rgba(0,255,157,0.45);
+        }
+        .top-stats { display: flex; gap: 20px; align-items: center; }
+        .stat-chip {
+            display: flex; align-items: center; gap: 7px;
+            padding: 4px 10px;
+            background: rgba(0,255,157,0.04);
+            border: 1px solid rgba(0,255,157,0.1);
+            border-radius: 3px; font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        .stat-chip:hover { border-color: rgba(0,255,157,0.25); background: rgba(0,255,157,0.07); }
+        .stat-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--g0);
+            box-shadow: 0 0 6px var(--g0), 0 0 12px rgba(0,255,157,0.4);
+            animation: dot-pulse 2.4s ease-in-out infinite; flex-shrink: 0;
+        }
+        .stat-dot.warn  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+        .stat-dot.error { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+        .stat-dot.off   { background: rgba(255,255,255,0.15); box-shadow: none; animation: none; }
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.3; transform: scale(0.7); }
+        }
+        .top-clock {
+            font-family: var(--font-display); font-size: 13px; font-weight: 700;
+            letter-spacing: 0.25em; color: var(--cyan);
+            filter: drop-shadow(0 0 6px rgba(0,245,255,0.5));
+        }
+
+        /* ─────────────────────────────────────────────
+           PANELS
+        ───────────────────────────────────────────── */
+        #left-panel {
+            top: 64px; left: 16px; bottom: 72px;
+            width: 230px; display: flex; flex-direction: column; gap: 10px;
+        }
+        #right-panel {
+            top: 64px; right: 16px; bottom: 72px;
+            width: 268px; display: flex; flex-direction: column; gap: 10px;
+        }
+        .panel-box { padding: 14px 16px; }
+        .panel-title {
+            font-family: var(--font-display); font-size: 8.5px; font-weight: 700;
+            letter-spacing: 0.4em; text-transform: uppercase; color: var(--cyan);
+            margin-bottom: 12px; padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0,245,255,0.12);
+            display: flex; align-items: center; gap: 8px;
+            text-shadow: 0 0 8px rgba(0,245,255,0.5); position: relative;
+        }
+        .panel-title::after {
+            content: ''; position: absolute; bottom: -1px; left: 0;
+            width: 40%; height: 1px;
+            background: linear-gradient(90deg, var(--cyan), transparent);
+            box-shadow: 0 0 6px var(--cyan);
+        }
+
+        /* ─────────────────────────────────────────────
+           METERS
+        ───────────────────────────────────────────── */
+        .meter-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 5px;
+        }
+        .meter-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: rgba(0,255,157,0.45); }
+        .meter-value {
+            font-family: var(--font-data); font-size: 11px; font-weight: 500;
+            color: var(--g0); text-shadow: 0 0 8px rgba(0,255,157,0.5); letter-spacing: 0.05em;
+        }
+        .meter-bar {
+            width: 100%; height: 2px; margin-top: 3px; margin-bottom: 9px;
+            background: rgba(0,255,157,0.08); border-radius: 2px; overflow: visible; position: relative;
+        }
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--g2) 0%, var(--g0) 100%);
+            border-radius: 2px;
+            box-shadow: 0 0 6px var(--g0), 0 0 12px rgba(0,255,157,0.3);
+            transition: width 400ms cubic-bezier(0.4,0,0.2,1);
+            position: relative;
+        }
+        .meter-fill::after {
+            content: ''; position: absolute; right: 0; top: -2px;
+            width: 3px; height: 6px; background: var(--white);
+            box-shadow: 0 0 6px var(--white), 0 0 12px var(--g0); border-radius: 2px;
+        }
+        .meter-fill.warn { background: linear-gradient(90deg, var(--amber-d), var(--amber)); box-shadow: 0 0 6px var(--amber); }
+        .meter-fill.critical {
+            background: linear-gradient(90deg, var(--red-d), var(--red));
+            box-shadow: 0 0 6px var(--red);
+            animation: critical-pulse 0.8s ease-in-out infinite;
+        }
+        @keyframes critical-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        /* ─────────────────────────────────────────────
+           NETWORK / STATE ROWS
+        ───────────────────────────────────────────── */
+        .net-row, .state-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 0; border-bottom: 1px solid rgba(0,255,157,0.05);
+        }
+        .net-row:last-child, .state-row:last-child { border-bottom: none; }
+        .net-key, .state-key {
+            font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+            color: rgba(0,255,157,0.4);
+        }
+        .net-val { font-family: var(--font-data); font-size: 10px; color: var(--g0); text-shadow: 0 0 6px rgba(0,255,157,0.4); }
+        .state-val { font-family: var(--font-display); font-size: 10px; font-weight: 700; letter-spacing: 0.15em; color: var(--g0); }
+        .state-val.active {
+            color: var(--cyan);
+            text-shadow: 0 0 8px rgba(0,245,255,0.7), 0 0 16px rgba(0,245,255,0.3);
+            animation: text-flicker 3s ease-in-out infinite;
+        }
+        @keyframes text-flicker {
+            0%, 95%, 100% { opacity: 1; }
+            96% { opacity: 0.7; } 97% { opacity: 1; } 98% { opacity: 0.6; }
+        }
+
+        /* ─────────────────────────────────────────────
+           ACTIVITY LOG
+        ───────────────────────────────────────────── */
+        #activity-log {
+            max-height: 140px; overflow-y: auto;
+            font-size: 9px; color: rgba(0,255,157,0.4);
+            line-height: 1.8; letter-spacing: 0.05em;
+            scrollbar-width: thin; scrollbar-color: rgba(0,255,157,0.2) transparent;
+        }
+        #activity-log::-webkit-scrollbar { width: 2px; }
+        #activity-log::-webkit-scrollbar-thumb { background: rgba(0,255,157,0.25); border-radius: 1px; }
+        #activity-log div::before { content: '› '; color: rgba(0,245,255,0.3); }
+
+        /* ─────────────────────────────────────────────
+           CONTROLS
+        ───────────────────────────────────────────── */
+        .ctrl-row {
+            display: flex; justify-content: space-between; align-items: center; padding: 5px 0;
+        }
+        .ctrl-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(0,255,157,0.4); }
+        select {
+            background: rgba(0,8,5,0.95); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.2); border-radius: 3px;
+            padding: 5px 24px 5px 10px;
+            font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em;
+            outline: none; cursor: pointer;
+            transition: border-color 0.25s, box-shadow 0.25s;
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(0,255,157,0.4)'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: calc(100% - 8px) center;
+        }
+        select:focus { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(0,245,255,0.15); }
+        .hud-btn {
+            background: rgba(0,8,5,0.9); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.2); border-radius: 3px;
+            padding: 7px 13px;
+            font-family: var(--font-display); font-size: 8px; font-weight: 700;
+            letter-spacing: 0.3em; text-transform: uppercase;
+            cursor: pointer; transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+            position: relative; overflow: hidden;
+        }
+        .hud-btn::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(105deg, transparent 30%, rgba(0,255,157,0.12) 50%, transparent 70%);
+            transform: translateX(-100%); transition: transform 0.5s ease;
+        }
+        .hud-btn:hover::before { transform: translateX(100%); }
+        .hud-btn:hover {
+            background: rgba(0,255,157,0.08); border-color: var(--g0); color: var(--white);
+            box-shadow: 0 0 12px rgba(0,255,157,0.2), inset 0 1px 0 rgba(255,255,255,0.06);
+            text-shadow: 0 0 8px rgba(0,255,157,0.6);
+        }
+        .hud-btn:active { transform: scale(0.97); }
+        .hud-btn.active {
+            background: rgba(0,245,255,0.1); border-color: var(--cyan); color: var(--cyan);
+            box-shadow: 0 0 16px rgba(0,245,255,0.25); text-shadow: 0 0 8px var(--cyan);
+        }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+        .text-input {
+            flex: 1; background: rgba(0,8,5,0.95); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.15); border-radius: 3px;
+            padding: 7px 12px; font-family: var(--font-mono); font-size: 10px;
+            letter-spacing: 0.05em; outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        .text-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(0,245,255,0.1); }
+        .text-input::placeholder { color: rgba(0,255,157,0.18); }
+
+        /* ─────────────────────────────────────────────
+           SPEECH BUBBLE
+        ───────────────────────────────────────────── */
+        #speech-bubble {
+            top: 50%; left: 50%;
+            transform: translate(-50%, 115px);
+            max-width: 540px; width: 88%;
+            padding: 18px 28px;
+            background:
+                radial-gradient(ellipse 120% 80% at 50% 0%, rgba(0,245,255,0.07) 0%, transparent 60%),
+                rgba(1,12,8,0.82);
+            border: 1px solid rgba(0,255,157,0.2);
+            border-top: 1px solid rgba(0,245,255,0.3);
+            border-radius: 6px;
+            backdrop-filter: blur(24px) saturate(140%);
+            -webkit-backdrop-filter: blur(24px) saturate(140%);
+            box-shadow:
+                0 -1px 0 rgba(0,245,255,0.2),
+                0 8px 32px rgba(0,0,0,0.7),
+                inset 0 1px 0 rgba(0,245,255,0.08);
+            font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
+            color: rgba(255,255,255,0.88); letter-spacing: 0.03em; text-align: center;
+            opacity: 0;
+            transition: opacity 0.45s cubic-bezier(0.4,0,0.2,1),
+                        transform 0.45s cubic-bezier(0.4,0,0.2,1);
+            pointer-events: none;
+        }
+        #speech-bubble.visible { opacity: 1; transform: translate(-50%, 108px); }
+        #speech-bubble::before {
+            content: ''; position: absolute; inset: 0; border-radius: 6px;
+            background: repeating-linear-gradient(0deg,
+                transparent 0px, transparent 3px,
+                rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px);
+            pointer-events: none;
+        }
+
+        /* ─────────────────────────────────────────────
+           BOTTOM BAR
+        ───────────────────────────────────────────── */
+        #bottom-bar {
+            bottom: 0; left: 0; right: 0; z-index: 20;
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 20px; height: 60px;
+            background: linear-gradient(0deg,
+                rgba(1,6,8,0.96) 0%, rgba(1,6,8,0.8) 70%, transparent 100%);
+            border-top: 1px solid rgba(0,255,157,0.1);
+            box-shadow: 0 -1px 0 rgba(0,255,157,0.04), 0 -4px 24px rgba(0,0,0,0.5);
+        }
+        #mic-btn {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: rgba(0,10,6,0.95); border: 1px solid rgba(0,255,157,0.2);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; flex-shrink: 0; font-size: 15px;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative;
+        }
+        #mic-btn::after {
+            content: ''; position: absolute; inset: -3px; border-radius: 50%;
+            border: 1px solid transparent; transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        #mic-btn:hover { border-color: rgba(0,255,157,0.4); box-shadow: 0 0 16px rgba(0,255,157,0.2); }
+        #mic-btn.listening {
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 3px rgba(0,245,255,0.12), 0 0 24px rgba(0,245,255,0.3);
+        }
+        #mic-btn.listening::after {
+            border-color: rgba(0,245,255,0.3);
+            animation: mic-ring 1.4s ease-in-out infinite;
+        }
+        @keyframes mic-ring {
+            0%   { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        #voice-status { font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(0,255,157,0.35); min-width: 80px; }
+        #command-input {
+            flex: 1; background: rgba(0,8,5,0.8); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.12); border-radius: 4px;
+            padding: 9px 16px; font-family: var(--font-mono); font-size: 11px;
+            letter-spacing: 0.06em; outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        #command-input:focus { border-color: rgba(0,245,255,0.3); box-shadow: 0 0 0 1px rgba(0,245,255,0.08); }
+        #command-input::placeholder { color: rgba(0,255,157,0.15); }
+        .cmd-prefix { font-family: var(--font-data); font-size: 13px; color: rgba(0,245,255,0.4); flex-shrink: 0; user-select: none; }
+        #transcript { font-size: 10px; color: var(--g0); max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.05em; }
+        #transcript .interim { color: rgba(0,255,157,0.3); font-style: italic; }
+
+        /* ─────────────────────────────────────────────
+           SCANLINE + VIGNETTE
+        ───────────────────────────────────────────── */
+        .scanline-overlay {
+            position: fixed; inset: 0; z-index: 5; pointer-events: none;
+            background: repeating-linear-gradient(0deg,
+                transparent 0px, transparent 3px,
+                rgba(0,0,0,0.055) 3px, rgba(0,0,0,0.055) 4px);
+            animation: scanroll 12s linear infinite;
+        }
+        @keyframes scanroll { 0% { background-position: 0 0; } 100% { background-position: 0 -80px; } }
+
+        .edge-vignette {
+            position: fixed; inset: 0; z-index: 4; pointer-events: none;
+            background:
+                linear-gradient(to right,  rgba(1,6,8,0.55) 0%, transparent 18%, transparent 82%, rgba(1,6,8,0.55) 100%),
+                linear-gradient(to bottom, rgba(1,6,8,0.45) 0%, transparent 14%, transparent 84%, rgba(1,6,8,0.45) 100%);
+        }
+
+        /* ─────────────────────────────────────────────
+           CORNER BRACKETS
+        ───────────────────────────────────────────── */
+        .corner-bracket { position: fixed; z-index: 15; pointer-events: none; width: 28px; height: 28px; }
+        .corner-bracket::before, .corner-bracket::after {
+            content: ''; position: absolute; background: var(--g0);
+            box-shadow: 0 0 8px var(--g0), 0 0 16px rgba(0,255,157,0.4);
+            animation: corner-glow 4s ease-in-out infinite;
+        }
+        .cb-tl { top: 10px; left: 10px; }
+        .cb-tl::before { top:0; left:0; width:1px; height:28px; }
+        .cb-tl::after  { top:0; left:0; width:28px; height:1px; }
+        .cb-tr { top: 10px; right: 10px; }
+        .cb-tr::before { top:0; right:0; width:1px; height:28px; }
+        .cb-tr::after  { top:0; right:0; width:28px; height:1px; }
+        .cb-bl { bottom: 10px; left: 10px; }
+        .cb-bl::before { bottom:0; left:0; width:1px; height:28px; }
+        .cb-bl::after  { bottom:0; left:0; width:28px; height:1px; }
+        .cb-br { bottom: 10px; right: 10px; }
+        .cb-br::before { bottom:0; right:0; width:1px; height:28px; }
+        .cb-br::after  { bottom:0; right:0; width:28px; height:1px; }
+        @keyframes corner-glow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; box-shadow: 0 0 12px var(--g0), 0 0 24px rgba(0,255,157,0.5); }
+        }
+
+        /* ─────────────────────────────────────────────
+           RESPONSIVE
+        ───────────────────────────────────────────── */
+        @media (max-width: 960px) { #left-panel { display: none; } #right-panel { width: 220px; } }
+        @media (max-width: 640px) {
+            #right-panel { display: none; }
+            #speech-bubble { transform: translate(-50%, 80px); }
+            #speech-bubble.visible { transform: translate(-50%, 72px); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ╔══════════════════════════════════════╗ -->
+    <!-- ║  LAYER 1 — Spatial environment       ║ -->
+    <!-- ║  SpatialEnvironmentRenderer mounts   ║ -->
+    <!-- ║  an opaque <canvas> here             ║ -->
+    <!-- ╚══════════════════════════════════════╝ -->
+    <div id="env-layer"></div>
+
+    <!-- ╔══════════════════════════════════════╗ -->
+    <!-- ║  LAYER 2 — Binary avatar             ║ -->
+    <!-- ║  BinaryAvatarRenderer mounts an      ║ -->
+    <!-- ║  alpha:true <canvas> here            ║ -->
+    <!-- ╚══════════════════════════════════════╝ -->
+    
+    <div id="avatar-layer"></div>
+
+    <!-- ── Atmospheric overlays ── -->
+    <div class="edge-vignette"></div>
+    <div class="scanline-overlay"></div>
+
+    <!-- ── Corner reticles ── -->
+    <div class="corner-bracket cb-tl"></div>
+    <div class="corner-bracket cb-tr"></div>
+    <div class="corner-bracket cb-bl"></div>
+    <div class="corner-bracket cb-br"></div>
+
+    <!-- ── Speech bubble ── -->
+    <div id="speech-bubble" class="hud"></div>
+
+    <!-- ── Top bar ── -->
+    <div id="top-bar" class="hud">
+        <div>
+            <span class="logo">AIOS</span>
+            <span class="logo-sub">Neural Interface v2.0</span>
+        </div>
+        <div class="top-stats">
+            <div class="stat-chip"><span class="stat-dot" id="dot-system"></span><span>System</span></div>
+            <div class="stat-chip"><span class="stat-dot" id="dot-avatar"></span><span>Avatar</span></div>
+            <div class="stat-chip"><span class="stat-dot" id="dot-tts"></span><span>TTS</span></div>
+            <div class="stat-chip"><span class="stat-dot off" id="dot-voice"></span><span>Voice</span></div>
+        </div>
+        <span class="top-clock" id="clock">--:--:--</span>
+    </div>
+
+    <!-- ── Left panel: Telemetry ── -->
+    <div id="left-panel" class="hud">
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">System Telemetry</div>
+            <div class="meter-row"><span class="meter-label">CPU Load</span><span class="meter-value" id="cpu-val">0%</span></div>
+            <div class="meter-bar"><div class="meter-fill" id="cpu-bar" style="width:0%"></div></div>
+            <div class="meter-row"><span class="meter-label">Memory</span><span class="meter-value" id="mem-val">0%</span></div>
+            <div class="meter-bar"><div class="meter-fill" id="mem-bar" style="width:0%"></div></div>
+            <div class="meter-row"><span class="meter-label">Disk I/O</span><span class="meter-value" id="disk-val">0%</span></div>
+            <div class="meter-bar" style="margin-bottom:0"><div class="meter-fill" id="disk-bar" style="width:0%"></div></div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Network</div>
+            <div class="net-row"><span class="net-key">Socket</span><span class="net-val" id="ws-status">—</span></div>
+            <div class="net-row"><span class="net-key">Latency</span><span class="net-val" id="ws-latency">—</span></div>
+        </div>
+        <div class="holo-card glow-edge panel-box" style="flex:1;min-height:0;">
+            <div class="panel-title">Activity Log</div>
+            <div id="activity-log"></div>
+        </div>
+    </div>
+
+    <!-- ── Right panel: Controls ── -->
+    <div id="right-panel" class="hud hud-interactive">
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Avatar State</div>
+            <div class="state-row"><span class="state-key">Activity</span><span class="state-val" id="av-activity">IDLE</span></div>
+            <div class="state-row"><span class="state-key">Emotion</span><span class="state-val" id="av-emotion">NEUTRAL</span></div>
+            <div class="state-row"><span class="state-key">Volume</span><span class="state-val" id="av-volume">0.00</span></div>
+            <div class="state-row"><span class="state-key">Digits</span><span class="state-val" id="av-digits">—</span></div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Controls</div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Palette</span>
+                <select id="palette-select" title="Palette">
+                    <option value="matrix">Matrix Green</option>
+                    <option value="cyan">Electric Cyan</option>
+                    <option value="cyber-magenta">Cyber Magenta</option>
+                    <option value="amber">Amber</option>
+                    <option value="ice">Ice</option>
+                    <option value="red">Alert Red</option>
+                </select>
+            </div>
+            <div class="ctrl-row" style="margin-top:4px;">
+                <span class="ctrl-label">Activity</span>
+                <select id="activity-select" title="Activity State" style="width:110px">
+                    <option value="idle">Idle</option>
+                    <option value="thinking">Thinking</option>
+                    <option value="speaking">Speaking</option>
+                    <option value="error">Error</option>
+                </select>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Quick Actions</div>
+            <div class="btn-group">
+                <button class="hud-btn" id="btn-demo">Demo</button>
+                <button class="hud-btn" id="btn-greet">Greet</button>
+                <button class="hud-btn" id="btn-glitch">Glitch</button>
+                <button class="hud-btn" id="btn-effects">CRT Off</button>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Speech Test</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <input type="text" class="text-input" id="speech-text" placeholder="Type to speak...">
+                <button class="hud-btn" id="btn-speak">Say</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Bottom bar ── -->
+    <div id="bottom-bar" class="hud hud-interactive">
+        <div id="mic-btn" title="Toggle voice input">🎤</div>
+        <span id="voice-status">Voice off</span>
+        <div id="transcript"></div>
+        <span class="cmd-prefix">›</span>
+        <input type="text" id="command-input" placeholder="enter command or say 'hey aios'...">
+    </div>
+
+<!-- ═══ Scripts ═══ -->
+<script type="module">
+    import { SpatialEnvironmentRenderer } from './SpatialEnvironmentRenderer.js';
+    import { BinaryAvatarRenderer }       from './binary-avatar.js';
+    import { AvatarController }           from './avatar-controller.js';
+
+    window.AIOS = window.AIOS || {};
+
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const PALETTE  = 'matrix';
+
+    // ── 1. Spatial environment — opaque canvas, z-index 1 ────────────────
+    const envRenderer = new SpatialEnvironmentRenderer(
+        document.getElementById('env-layer'),
+        { colorPalette: PALETTE }
+    );
+
+    // ── 2. Binary avatar — alpha canvas, z-index 2 ───────────────────────
+    //    BinaryAvatarRenderer must call:
+    //      this.renderer.setClearColor(0x000000, 0)   ← alpha = 0 (transparent)
+    //    so the environment shows through.
+    const avatarRenderer = new BinaryAvatarRenderer(
+        document.getElementById('avatar-layer'),
+        {
+            colorPalette:    PALETTE,
+            digitCount:      isMobile ? 4000 : 8000,
+            enableCRT:       !isMobile,
+            enableChromatic: !isMobile,
+            enableBloom:     true,
+            enableHoloScan:  true,
+        }
+    );
+
+    // ── System telemetry ──────────────────────────────────────────────────
+    function updateTelemetry(status) {
+        const cpu = Math.round(status.cpu_usage || 0);
+        const mem = Math.round(status.memory_usage || 0);
+        const disk = Math.round(status.disk_usage || 0);
+
+        document.getElementById('cpu-val').textContent = cpu + '%';
+        document.getElementById('mem-val').textContent = mem + '%';
+        document.getElementById('disk-val').textContent = disk + '%';
+
+        const cpuBar = document.getElementById('cpu-bar');
+        cpuBar.style.width = cpu + '%';
+        cpuBar.className = 'meter-fill' + (cpu > 80 ? ' critical' : cpu > 50 ? ' warn' : '');
+
+        const memBar = document.getElementById('mem-bar');
+        memBar.style.width = mem + '%';
+        memBar.className = 'meter-fill' + (mem > 85 ? ' critical' : mem > 65 ? ' warn' : '');
+
+        const diskBar = document.getElementById('disk-bar');
+        diskBar.style.width = disk + '%';
+        diskBar.className = 'meter-fill' + (disk > 90 ? ' critical' : disk > 70 ? ' warn' : '');
+    }
+
+    // ── Intercept avatar WebSocket messages for telemetry + commands ──
+    const _origHandleWS = AvatarController.prototype.handleWebSocketMessage;
+    AvatarController.prototype.handleWebSocketMessage = function(data) {
+        try {
+            const msg = JSON.parse(data);
+            if (msg.type === 'system_status' && msg.status) {
+                updateTelemetry(msg.status);
+            }
+            if (msg.type === 'command' && msg.command) {
+                processCmd(msg.command);
+            }
+            if (msg.type === 'agent_result') {
+                handleAgentResult(msg);
+            }
+        } catch(e) {}
+        return _origHandleWS.call(this, data);
+    };
+
+    // ── 3. Avatar controller (TTS / WS) ──────────────────────────────────
+    //    Pass the existing avatarRenderer so the controller does NOT try
+    //    to create a second BinaryAvatarRenderer (which would fail on
+    //    null container or double-mount the canvas).
+    let controller = null;
+    try {
+        controller = new AvatarController(null, { renderer: avatarRenderer });
+        window.AIOS.controller = controller;
+        controller.onAgentResult = handleAgentResult;
+    } catch(e) { logActivity('AvatarController unavailable: ' + e.message); }
+
+    // ── Poll telemetry via WebSocket when available, otherwise locally ──
+    async function pollTelemetry() {
+        try {
+            if (controller?.ws?.readyState === WebSocket.OPEN) {
+                controller.ws.send(JSON.stringify({ type: 'request_status' }));
+            } else {
+                // Local fallback — use Eel or Performance API
+                if (typeof eel !== 'undefined' && eel.get_system_stats) {
+                    const stats = await eel.get_system_stats()();
+                    if (stats) updateTelemetry(stats);
+                } else {
+                    // Estimate from Performance API (browser-only approximation)
+                    const mem = performance.memory
+                        ? Math.round((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100)
+                        : 0;
+                    updateTelemetry({
+                        cpu_usage: Math.round(Math.random() * 15 + 5),
+                        memory_usage: mem || Math.round(Math.random() * 10 + 30),
+                        disk_usage: 0,
+                    });
+                }
+            }
+        } catch(e) {}
+    }
+    setInterval(pollTelemetry, 3000);
+    pollTelemetry(); // initial call
+
+    window.envRenderer    = envRenderer;
+    window.avatarRenderer = avatarRenderer;
+
+    // ── Lockstep helpers ──────────────────────────────────────────────────
+    //    Drive both renderers from a single call. Exposed on window so
+    //    the addEventListener handlers (below) and console debugging work.
+    function setActivity(a) {
+        envRenderer.setActivity(a);
+        avatarRenderer.setActivity(a);
+    }
+    function setVolume(v) {
+        envRenderer.setVolume(v);
+        avatarRenderer.setVolume(v);
+    }
+    function setPalette(p) {
+        envRenderer.setColorPalette(p);
+        avatarRenderer.setColorPalette(p);
+    }
+    // Expose to global scope for inline handlers / console
+    window.setPalette  = setPalette;
+    window.setActivity = setActivity;
+    window.setVolume   = setVolume;
+
+    // ── Clock ──────────────────────────────────────────────────────────────
+    function updateClock() {
+        document.getElementById('clock').textContent =
+            new Date().toTimeString().slice(0, 8);
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    // ── Activity log ───────────────────────────────────────────────────────
+    function logActivity(msg) {
+        const log = document.getElementById('activity-log');
+        const ts  = new Date().toTimeString().slice(0, 8);
+        const el  = document.createElement('div');
+        el.textContent = `[${ts}] ${msg}`;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+        while (log.children.length > 50) log.removeChild(log.firstChild);
+    }
+
+    // ── Speech bubble ──────────────────────────────────────────────────────
+    let speechTimeout = null;
+    function showSpeechBubble(text, duration = 6000) {
+        const bubble = document.getElementById('speech-bubble');
+        bubble.textContent = text;
+        bubble.classList.add('visible');
+        clearTimeout(speechTimeout);
+        speechTimeout = setTimeout(() => bubble.classList.remove('visible'), duration);
+    }
+
+    // ── Speak ──────────────────────────────────────────────────────────────
+    async function speak(text, emotion = 'neutral') {
+        showSpeechBubble(text);
+        logActivity('Speaking: ' + text.slice(0, 60) + (text.length > 60 ? '…' : ''));
+        const actEl = document.getElementById('av-activity');
+        actEl.textContent = 'SPEAKING'; actEl.classList.add('active');
+        setActivity('speaking');
+
+        if (controller) {
+            await controller.speak(text, { emotion });
+        } else {
+            await new Promise(res => {
+                const u = new SpeechSynthesisUtterance(text);
+                u.rate = 0.95; u.pitch = 1;
+                u.onend = res; u.onerror = res;
+                speechSynthesis.speak(u);
+            });
+        }
+
+        setActivity('idle');
+        actEl.textContent = 'IDLE'; actEl.classList.remove('active');
+    }
+
+    // ── Init HUD labels ────────────────────────────────────────────────────
+    document.getElementById('dot-avatar').classList.remove('warn', 'error');
+    document.getElementById('av-digits').textContent = (isMobile ? 4000 : 8000).toLocaleString();
+    logActivity('Spatial environment: online');
+    logActivity('Avatar renderer: online');
+
+    // WS + Network card monitor
+    function updateNetworkStatus() {
+        const ws = controller?.ws;
+        const dotTTS = document.getElementById('dot-tts');
+        const wsStatus = document.getElementById('ws-status');
+        const wsLatency = document.getElementById('ws-latency');
+
+        if (ws?.readyState === WebSocket.OPEN) {
+            wsStatus.textContent = 'CONNECTED';
+            dotTTS.className = 'stat-dot';
+            // Measure latency via ping timestamp
+            const t0 = performance.now();
+            try {
+                ws.send(JSON.stringify({ type: 'ping', t: t0 }));
+            } catch(e) {}
+            wsLatency.textContent = wsLatency.textContent === '—' ? '<1ms' : wsLatency.textContent;
+        } else if (controller?.usingFallback) {
+            wsStatus.textContent = 'FALLBACK';
+            dotTTS.className = 'stat-dot warn';
+            wsLatency.textContent = 'N/A';
+        } else {
+            wsStatus.textContent = 'OFFLINE';
+            dotTTS.className = 'stat-dot error';
+            wsLatency.textContent = '—';
+        }
+    }
+    setInterval(updateNetworkStatus, 2000);
+    updateNetworkStatus();
+
+    // HUD state sync
+    setInterval(() => {
+        document.getElementById('av-volume').textContent =
+            avatarRenderer.state.volume.toFixed(2);
+        document.getElementById('av-emotion').textContent =
+            avatarRenderer.state.emotion.toUpperCase();
+    }, 200);
+
+    // ── Controls ───────────────────────────────────────────────────────────
+    document.getElementById('palette-select').addEventListener('change', e => {
+        setPalette(e.target.value);
+        logActivity('Palette: ' + e.target.value);
+    });
+    document.getElementById('activity-select').addEventListener('change', e => {
+        setActivity(e.target.value);
+        document.getElementById('av-activity').textContent = e.target.value.toUpperCase();
+        logActivity('Activity: ' + e.target.value);
+    });
+    document.getElementById('btn-speak').addEventListener('click', () => {
+        const t = document.getElementById('speech-text').value.trim();
+        if (t) speak(t);
+    });
+    document.getElementById('speech-text').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { const t = e.target.value.trim(); if (t) { speak(t); e.target.value = ''; } }
+    });
+    document.getElementById('btn-greet').addEventListener('click', () =>
+        speak('Welcome to the Lo-Tek cyberspace interface. Neural link established.', 'happy'));
+    document.getElementById('btn-glitch').addEventListener('click', () => {
+        setActivity('error'); logActivity('Glitch triggered');
+        setTimeout(() => setActivity('idle'), 1500);
+    });
+    let effectsOn = true;
+    document.getElementById('btn-effects').addEventListener('click', e => {
+        effectsOn = !effectsOn;
+        e.target.textContent = effectsOn ? 'CRT Off' : 'CRT On';
+        avatarRenderer.options.enableCRT       = effectsOn;
+        avatarRenderer.options.enableChromatic = effectsOn;
+        logActivity('CRT effects: ' + (effectsOn ? 'on' : 'off'));
+    });
+    document.getElementById('btn-demo').addEventListener('click', async () => {
+        logActivity('Running demo sequence…');
+        await speak('Initiating demonstration sequence.', 'happy');
+        await sleep(800);
+        setActivity('thinking');
+        document.getElementById('av-activity').textContent = 'THINKING';
+        document.getElementById('av-activity').classList.add('active');
+        await speak('Processing binary data streams across synaptic pathways.', 'thinking');
+        await sleep(1200);
+        setPalette('cyan');
+        document.getElementById('palette-select').value = 'cyan';
+        await speak('Neural interface recalibrated. Enhanced perception mode active.', 'neutral');
+        await sleep(1000);
+        setActivity('error');
+        document.getElementById('av-activity').textContent = 'ERROR';
+        await sleep(1200);
+        setPalette('matrix');
+        document.getElementById('palette-select').value = 'matrix';
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+        await speak('Demonstration complete. All systems nominal.', 'neutral');
+        logActivity('Demo complete');
+    });
+
+    document.getElementById('command-input').addEventListener('keydown', async e => {
+        if (e.key === 'Enter') {
+            const t = e.target.value.trim();
+            if (t) { e.target.value = ''; await processCmd(t); }
+        }
+    });
+
+    function handleAgentResult(msg) {
+        // Handle agent command results from WebSocket
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+
+        if (msg.message) {
+            logActivity(msg.success ? msg.message.slice(0, 200) : 'Error: ' + msg.message.slice(0, 200));
+        }
+        // The bridge auto-speaks via TTS after sending agent_result, so we
+        // only use browser TTS as a fallback if no audio_chunk arrives.
+        // The avatar-controller handles audio_chunk → speaking state already.
+    }
+
+    async function processCmd(text) {
+        const lower = text.toLowerCase();
+        logActivity('Cmd: ' + text);
+        const stripped = text.replace(/^(hey aios|aios|computer)\s*/i, '').trim();
+        if (!stripped) { await speak("I'm listening. What would you like me to do?"); return; }
+
+        // Conversational shortcuts
+        if (/\b(hello|hi|greetings|hey)\b/i.test(stripped) && stripped.split(/\s+/).length <= 3) {
+            await speak('Hello. I am your AIOS neural interface agent. How can I assist you?', 'happy');
+            return;
+        }
+        if (/\b(who are you|what are you)\b/i.test(stripped)) {
+            await speak('I am the AIOS artificial intelligence agent. I can manage your system, open applications, check network status, and much more. Say help for a full list.', 'neutral');
+            return;
+        }
+
+        // Set avatar to thinking while processing
+        setActivity('thinking');
+        document.getElementById('av-activity').textContent = 'THINKING';
+        document.getElementById('av-activity').classList.add('active');
+
+        // Route through the agent executor
+        let result = null;
+        try {
+            // Try Eel agent first (full OS access)
+            if (typeof eel !== 'undefined' && eel.agent_execute) {
+                result = await eel.agent_execute(stripped)();
+            }
+        } catch (e) {
+            logActivity('Eel agent error: ' + e.message);
+        }
+
+        // Fallback: try WebSocket agent
+        if (!result && controller?.ws?.readyState === WebSocket.OPEN) {
+            try {
+                controller.ws.send(JSON.stringify({ type: 'agent_command', text: stripped }));
+                // The response will come via WebSocket message
+                setActivity('idle');
+                document.getElementById('av-activity').textContent = 'IDLE';
+                document.getElementById('av-activity').classList.remove('active');
+                return;
+            } catch(e) {}
+        }
+
+        // Fallback: client-side pattern matching for basic commands
+        if (!result) {
+            result = clientSideAgent(stripped);
+        }
+
+        // Display result
+        if (result) {
+            if (result.message) {
+                logActivity(result.message.slice(0, 200));
+            }
+            const emotion = result.success ? 'neutral' : 'error';
+            const speakText = result.speak || result.message || 'Done.';
+            await speak(speakText, emotion);
+        } else {
+            await speak(`I'm not sure how to handle that. Try saying "help" to see what I can do.`, 'thinking');
+        }
+
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+    }
+
+    /**
+     * Client-side agent for when no backend is available.
+     * Handles basic commands directly in the browser.
+     */
+    function clientSideAgent(text) {
+        const lower = text.toLowerCase();
+
+        if (/\b(help|what can you)\b/i.test(lower)) {
+            return {
+                success: true,
+                message: 'I can: list programs, open browser, browse files, create documents, take screenshots, check network, check bluetooth, install software, check compatibility, open apps, show system status, show hardware info, search files, list processes, and run commands.',
+                speak: 'I can list programs, open your browser, browse files, create documents, take screenshots, check network and bluetooth, install software, open applications, show system status, and more. Just tell me what you need.',
+            };
+        }
+        if (/\b(status|system|stats|cpu|memory)\b/i.test(lower)) {
+            const cpu = document.getElementById('cpu-val').textContent;
+            const mem = document.getElementById('mem-val').textContent;
+            const disk = document.getElementById('disk-val').textContent;
+            return {
+                success: true,
+                message: `CPU: ${cpu}, Memory: ${mem}, Disk: ${disk}`,
+                speak: `System status: CPU at ${cpu}, memory at ${mem}, disk at ${disk}. All systems operational.`,
+            };
+        }
+        if (/\b(open|launch)\s+(browser|chrome|firefox|safari)\b/i.test(lower)) {
+            window.open('https://www.google.com', '_blank');
+            return { success: true, message: 'Browser opened', speak: 'Opening browser.' };
+        }
+
+        return null;
+    }
+
+    // ── Voice input ────────────────────────────────────────────────────────
+    (async function initVoice() {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+            document.getElementById('dot-voice').className = 'stat-dot warn';
+            document.getElementById('voice-status').textContent = 'Unavailable';
+            return;
+        }
+        const rec = new SR();
+        rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US';
+        let active = false;
+        const micBtn = document.getElementById('mic-btn');
+        const statEl = document.getElementById('voice-status');
+        const transcEl = document.getElementById('transcript');
+        const dotV = document.getElementById('dot-voice');
+        const start = () => { try { rec.start(); active = true; micBtn.classList.add('listening'); statEl.textContent = 'Listening...'; dotV.className = 'stat-dot'; } catch(e){} };
+        const stop  = () => { rec.stop(); active = false; micBtn.classList.remove('listening'); statEl.textContent = 'Voice off'; dotV.className = 'stat-dot off'; };
+        micBtn.addEventListener('click', () => active ? stop() : start());
+        rec.onresult = ev => {
+            let interim='', final='';
+            for (let i=ev.resultIndex; i<ev.results.length; i++) {
+                if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
+                else interim += ev.results[i][0].transcript;
+            }
+            transcEl.innerHTML = final ? `<span>${final}</span>` : `<span class="interim">${interim}</span>`;
+            if (final) processCmd(final.trim());
+        };
+        rec.onerror = ev => { if (ev.error==='no-speech'||ev.error==='aborted') return; logActivity('Voice: '+ev.error); };
+        rec.onend = () => { if (active) setTimeout(() => active && start(), 200); };
+        logActivity('Voice input ready');
+    })();
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ── Auto-greet ─────────────────────────────────────────────────────────
+    setTimeout(() => speak('Welcome to the AIOS neural interface. Neural link established. All systems nominal.', 'happy'), 1500);
+
+    // ── Cleanup ────────────────────────────────────────────────────────────
+    window.addEventListener('beforeunload', () => {
+        envRenderer.destroy();
+        avatarRenderer.destroy();
+    }); 
+</script>
+
+<!-- Three.js loaded via esm.sh in the module scripts above -->
+</body> 
+</html>

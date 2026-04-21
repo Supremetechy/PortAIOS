@@ -1,0 +1,19 @@
+# Binary Avatar System Requirements
+# Install with: pip install -r requirements-avatar.txt
+
+# WebSocket server
+websockets>=12.0
+
+# Audio processing
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# TTS engines (choose one or both)
+# High fidelity TTS
+TTS>=0.22.0  # Coqui TTS
+
+# Alternative: Piper TTS (install separately via system package manager)
+# Instructions: https://github.com/rhasspy/piper
+
+# System monitoring
+psutil>=5.9.0

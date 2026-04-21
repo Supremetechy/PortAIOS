@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Browser Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0f0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(0, 255, 0, 0.05);
+            border: 2px solid #0f0;
+            border-radius: 8px;
+            padding: 30px;
+        }
+
+        .info {
+            background: rgba(0, 255, 255, 0.1);
+            border-left: 4px solid #0ff;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 255, 0, 0.03);
+            border: 1px solid #0f0;
+            border-radius: 4px;
+        }
+
+        h2 {
+            color: #0ff;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background: #000;
+            color: #0f0;
+            border: 2px solid #0f0;
+            padding: 12px 24px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.2s;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: #0f0;
+            color: #000;
+            box-shadow: 0 0 15px #0f0;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .success {
+            color: #0f0;
+        }
+
+        .error {
+            color: #f00;
+        }
+
+        .warning {
+            color: #ff0;
+        }
+
+        #log {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #0f0;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 2px solid #0f0;
+            padding-left: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 TTS Browser Compatibility Test</h1>
+
+        <div class="info">
+            <strong>Browser:</strong> <span id="browser-info">Detecting...</span><br>
+            <strong>Speech Synthesis:</strong> <span id="synthesis-support">Checking...</span><br>
+            <strong>Voices Loaded:</strong> <span id="voices-count">Loading...</span>
+        </div>
+
+        <div class="test-section">
+            <h2>Basic Tests</h2>
+            <div class="controls">
+                <button onclick="testBasicSpeech()">Test Basic Speech</button>
+                <button onclick="testLongSpeech()">Test Long Speech</button>
+                <button onclick="testMultiple()">Test Queue (3 messages)</button>
+                <button onclick="stopSpeech()">Stop Speech</button>
+            </div>
+            <div id="basic-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Advanced Tests</h2>
+            <div class="controls">
+                <button onclick="testRapidFire()">Rapid Fire (5 msgs)</button>
+                <button onclick="testCancelRetry()">Cancel & Retry</button>
+                <button onclick="testVoiceSelection()">Test Voice Selection</button>
+                <button onclick="testErrorHandling()">Test Error Handling</button>
+            </div>
+            <div id="advanced-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Available Voices</h2>
+            <div id="voices-list"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test Log</h2>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { AvatarController } from './web/avatar-controller.js';
+
+        let testCount = 0;
+        let passCount = 0;
+        let failCount = 0;
+
+        // Detect browser
+        function detectBrowser() {
+            const ua = navigator.userAgent;
+            if (ua.includes('Firefox')) return 'Firefox';
+            if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari';
+            if (ua.includes('Chrome')) return 'Chrome/Chromium';
+            if (ua.includes('Edge')) return 'Edge';
+            return 'Unknown';
+        }
+
+        // Initialize
+        document.getElementById('browser-info').textContent = detectBrowser();
+        document.getElementById('synthesis-support').textContent = 
+            window.speechSynthesis ? '✅ Supported' : '❌ Not Supported';
+
+        // Load voices
+        function loadVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            document.getElementById('voices-count').textContent = 
+                `${voices.length} voices available`;
+            
+            const list = document.getElementById('voices-list');
+            if (voices.length === 0) {
+                list.innerHTML = '<p class="warning">⚠️ No voices loaded yet. Try refreshing or waiting.</p>';
+            } else {
+                list.innerHTML = voices.map((v, i) => 
+                    `<div style="margin: 5px 0;">
+                        ${i + 1}. <strong>${v.name}</strong> 
+                        (${v.lang}) 
+                        ${v.default ? '<span style="color: #0ff;">[DEFAULT]</span>' : ''}
+                        ${v.localService ? '<span style="color: #ff0;">[LOCAL]</span>' : ''}
+                    </div>`
+                ).join('');
+            }
+        }
+
+        // Initial load
+        loadVoices();
+        window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('log').prepend(entry);
+        }
+
+        function showResult(elementId, message, success) {
+            const el = document.getElementById(elementId);
+            el.className = `result ${success ? 'success' : 'error'}`;
+            el.textContent = success ? `✅ ${message}` : `❌ ${message}`;
+        }
+
+        // Test functions
+        window.testBasicSpeech = async function() {
+            log('Testing basic speech...');
+            testCount++;
+            
+            try {
+                const utterance = new SpeechSynthesisUtterance('Hello, this is a basic speech test.');
+                
+                await new Promise((resolve, reject) => {
+                    utterance.onstart = () => log('Speech started', 'success');
+                    utterance.onend = () => {
+                        log('Speech completed successfully', 'success');
+                        resolve();
+                    };
+                    utterance.onerror = (e) => {
+                        log(`Speech error: ${e.error}`, 'error');
+                        reject(e);
+                    };
+                    
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                showResult('basic-result', 'Basic speech test passed', true);
+                passCount++;
+            } catch (error) {
+                showResult('basic-result', `Basic speech test failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.testLongSpeech = async function() {
+            log('Testing long speech...');
+            testCount++;
+            
+            const longText = 'This is a longer speech test to verify that the browser can handle extended audio without cutting off. ' +
+                           'It should continue speaking for at least fifteen seconds to test the Chrome resume workaround. ' +
+                           'If you hear this entire message without interruption, the test has passed successfully.';
+            
+            try {
+                const utterance = new SpeechSynthesisUtterance(longText);
+                
+                await new Promise((resolve, reject) => {
+                    let startTime;
+                    utterance.onstart = () => {
+                        startTime = Date.now();
+                        log('Long speech started', 'success');
+                    };
+                    utterance.onend = () => {
+                        const duration = (Date.now() - startTime) / 1000;
+                        log(`Long speech completed in ${duration.toFixed(1)}s`, 'success');
+                        resolve();
+                    };
+                    utterance.onerror = (e) => {
+                        log(`Long speech error: ${e.error}`, 'error');
+                        reject(e);
+                    };
+                    
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                showResult('basic-result', 'Long speech test passed', true);
+                passCount++;
+            } catch (error) {
+                showResult('basic-result', `Long speech test failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.testMultiple = async function() {
+            log('Testing multiple queued messages...');
+            testCount++;
+            
+            try {
+                const messages = [
+                    'First message in queue',
+                    'Second message in queue',
+                    'Third and final message'
+                ];
+                
+                for (let msg of messages) {
+                    await new Promise((resolve) => {
+                        const utterance = new SpeechSynthesisUtterance(msg);
+                        utterance.onend = () => {
+                            log(`Completed: "${msg}"`, 'success');
+                            resolve();
+                        };
+                        window.speechSynthesis.speak(utterance);
+                    });
+                }
+                
+                showResult('basic-result', 'Queue test passed (all 3 messages)', true);
+                passCount++;
+            } catch (error) {
+                showResult('basic-result', `Queue test failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.stopSpeech = function() {
+            log('Stopping speech...');
+            window.speechSynthesis.cancel();
+            showResult('basic-result', 'Speech stopped', true);
+        };
+
+        window.testRapidFire = async function() {
+            log('Testing rapid-fire messages...');
+            testCount++;
+            
+            try {
+                const promises = [];
+                for (let i = 1; i <= 5; i++) {
+                    promises.push(new Promise((resolve) => {
+                        const utterance = new SpeechSynthesisUtterance(`Message ${i}`);
+                        utterance.onend = () => {
+                            log(`Rapid message ${i} complete`, 'success');
+                            resolve();
+                        };
+                        window.speechSynthesis.speak(utterance);
+                    }));
+                }
+                
+                await Promise.all(promises);
+                showResult('advanced-result', 'Rapid-fire test passed (5 messages)', true);
+                passCount++;
+            } catch (error) {
+                showResult('advanced-result', `Rapid-fire test failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.testCancelRetry = async function() {
+            log('Testing cancel and retry...');
+            testCount++;
+            
+            try {
+                // Start speech
+                const utterance1 = new SpeechSynthesisUtterance('This message will be cancelled mid-speech.');
+                window.speechSynthesis.speak(utterance1);
+                
+                // Cancel after 500ms
+                await new Promise(resolve => setTimeout(resolve, 500));
+                window.speechSynthesis.cancel();
+                log('Speech cancelled', 'warning');
+                
+                // Retry immediately
+                await new Promise((resolve) => {
+                    const utterance2 = new SpeechSynthesisUtterance('This is the retry message. It should work fine.');
+                    utterance2.onend = () => {
+                        log('Retry successful', 'success');
+                        resolve();
+                    };
+                    window.speechSynthesis.speak(utterance2);
+                });
+                
+                showResult('advanced-result', 'Cancel & retry test passed', true);
+                passCount++;
+            } catch (error) {
+                showResult('advanced-result', `Cancel & retry failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.testVoiceSelection = async function() {
+            log('Testing voice selection...');
+            testCount++;
+            
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) {
+                showResult('advanced-result', 'No voices available to test', false);
+                failCount++;
+                return;
+            }
+            
+            try {
+                const voice = voices[0];
+                log(`Using voice: ${voice.name}`, 'info');
+                
+                const utterance = new SpeechSynthesisUtterance('Testing voice selection.');
+                utterance.voice = voice;
+                
+                await new Promise((resolve) => {
+                    utterance.onend = () => {
+                        log('Voice selection test complete', 'success');
+                        resolve();
+                    };
+                    window.speechSynthesis.speak(utterance);
+                });
+                
+                showResult('advanced-result', `Voice selection test passed (${voice.name})`, true);
+                passCount++;
+            } catch (error) {
+                showResult('advanced-result', `Voice selection failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.testErrorHandling = async function() {
+            log('Testing error handling...');
+            testCount++;
+            
+            try {
+                // Test with empty text
+                const utterance = new SpeechSynthesisUtterance('');
+                
+                await new Promise((resolve, reject) => {
+                    utterance.onend = () => {
+                        log('Empty text handled gracefully', 'success');
+                        resolve();
+                    };
+                    utterance.onerror = (e) => {
+                        log(`Error event fired: ${e.error}`, 'warning');
+                        resolve(); // This is expected
+                    };
+                    
+                    window.speechSynthesis.speak(utterance);
+                    
+                    // Timeout in case nothing happens
+                    setTimeout(resolve, 2000);
+                });
+                
+                showResult('advanced-result', 'Error handling test passed', true);
+                passCount++;
+            } catch (error) {
+                showResult('advanced-result', `Error handling failed: ${error.message}`, false);
+                failCount++;
+            }
+        };
+
+        window.clearLog = function() {
+            document.getElementById('log').innerHTML = '';
+            log('Log cleared');
+        };
+
+        // Summary on page unload
+        window.addEventListener('beforeunload', () => {
+            console.log('=== TTS TEST SUMMARY ===');
+            console.log(`Total Tests: ${testCount}`);
+            console.log(`Passed: ${passCount}`);
+            console.log(`Failed: ${failCount}`);
+            console.log(`Success Rate: ${testCount > 0 ? ((passCount/testCount)*100).toFixed(1) : 0}%`);
+        });
+
+        log('Test page loaded. Click any test button to begin.', 'success');
+    </script>
+</body>
+</html>

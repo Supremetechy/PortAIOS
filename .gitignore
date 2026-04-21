@@ -1,0 +1,23 @@
+# Virtual environments
+.venv/
+.sixth/
+.build-venv/
+
+# Editor / tool state
+.vscode/
+.qodo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+
+# macOS
+.DS_Store
+Icon?
