@@ -26,7 +26,7 @@ import time
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 # --- Backend capability probes ---------------------------------------------
@@ -88,7 +88,7 @@ class Pyttsx3Backend(TTSBackend):
         self._engine = None
         self._pyttsx3 = _probe_pyttsx3()
         self.available = self._pyttsx3 is not None
-        if self.available:
+        if self._pyttsx3 is not None:
             try:
                 self._engine = self._pyttsx3.init()
                 self._engine.setProperty("rate", 175)
@@ -110,7 +110,7 @@ class CoquiBackend(TTSBackend):
         tts_cls = _probe_coqui_tts()
         self.available = tts_cls is not None
         self._tts = None
-        if self.available:
+        if tts_cls is not None:
             try:
                 self._tts = tts_cls(model_name)
             except Exception:
@@ -270,7 +270,7 @@ class SpeechRecognitionBackend(STTBackend):
         self.available = sr is not None
         self._recognizer = None
         self._mic = None
-        if self.available:
+        if sr is not None:
             try:
                 self._recognizer = sr.Recognizer()
                 self._mic = sr.Microphone()
@@ -310,7 +310,7 @@ class WhisperMicBackend(STTBackend):
         self._sd = sd
         self._model = None
         self._rate = sample_rate
-        if self.available:
+        if whisper_mod is not None and sd is not None:
             try:
                 self._model = whisper_mod.load_model(model_name)
             except Exception:
@@ -463,7 +463,7 @@ def parse_command(utterance: str) -> Optional[str]:
     if not utterance:
         return None
     text = utterance.strip().lower()
-    best: Optional[tuple] = None  # (alias_length, command)
+    best: Optional[Tuple[int, str]] = None
     for cmd, aliases in COMMAND_ALIASES.items():
         for alias in aliases:
             pattern = r"\b" + re.escape(alias) + r"\b"

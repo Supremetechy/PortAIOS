@@ -9,13 +9,25 @@ This is the best of both worlds: the full Johnny Mnemonic Three.js
 avatar with GPU-accelerated WebGL, but no Chrome/Firefox dependency.
 
 Install: pip install pywebview
+
+⚠️  Do NOT run `pip install webview` — that's a different, unmaintained
+    package whose wheel build fails on modern Python. The package is
+    `pywebview`; the *module* it installs is named `webview`.
 """
 
-import os
 import json
 import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+
+try:
+    import webview  # provided by the `pywebview` PyPI package, not `webview`
+except ImportError as _exc:
+    raise ImportError(
+        "pywebview is not installed. Install with `pip install pywebview` "
+        "(NOT `pip install webview` — that's the wrong package and will "
+        "fail to build a wheel)."
+    ) from _exc
 
 from kernel.display.base import (
     DisplayBackend,
@@ -83,16 +95,15 @@ class WebViewBackend(DisplayBackend):
         self._api = WebViewAPI(self)
         self._webview_thread: Optional[threading.Thread] = None
 
-    def init(self, width: int = 1280, height: int = 800) -> None:
-        import webview
 
+    def init(self, width: int = 1280, height: int = 800) -> None:
+        # import webview
         # Determine which HTML to load — prefer the lip-sync version,
         # fall back to the voice-enabled one, then the integration page.
         html_candidates = [
-            "index-lipsync.html",
-            "index-voice-enabled.html",
             "avatar-integration.html",
-            "index-binary-avatar.html",
+            "index.html",
+            
         ]
         html_file = None
         for candidate in html_candidates:
@@ -131,7 +142,7 @@ class WebViewBackend(DisplayBackend):
         time.sleep(1.5)
 
     def _run_webview(self):
-        import webview
+        # import webview
         webview.start(debug=False)
         self._running = False
 

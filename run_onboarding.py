@@ -18,8 +18,7 @@ logger = logging.getLogger("AIOS")
 def _dispatch_subprocess_mode() -> bool:
     # PyInstaller makes sys.executable point to this launcher, so the kernel
     # passes `--subprocess <mode>` when it wants a helper process. Route to
-    # the real script here instead of re-running the onboarding GUI (which
-    # previously caused an infinite boot loop).
+    # the real script here instead of re-running the onboarding GUI in a loop.
     if len(sys.argv) < 3 or sys.argv[1] != "--subprocess":
         return False
 
@@ -33,9 +32,17 @@ def _dispatch_subprocess_mode() -> bool:
         spec = importlib.util.spec_from_file_location(
             "avatar_bridge", root / "web" / "avatar-bridge.py"
         )
+        if spec is None or spec.loader is None:
+            logger.error("Could not load spec or loader for avatar-bridge.py")
+            sys.exit(1)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         asyncio.run(module.main())
+        return True
+
+    if mode == "avatar-bridge-fallback":
+        import runpy
+        runpy.run_path(str(root / "server.py"), run_name="__main__")
         return True
 
     if mode == "kernel":

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS Onboarding</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>AIOS Setup Wizard</h1>
+            <div id="progress-bar"></div>
+        </header>
+        <main>
+            <div id="agent-avatar">
+                <!-- Agent Avatar Video will go here -->
+                <video id="avatar-video" autoplay loop muted></video>
+                <div id="avatar-placeholder">
+                    🤖 AI Assistant Video
+                </div>
+            </div>
+            <div id="onboarding-content">
+                <!-- Onboarding steps will be dynamically loaded here -->
+                <h2>Welcome to AIOS!</h2>
+                <p>I am your personal AI Agent. Let's get you set up.</p>
+                <button id="next-button">Next →</button>
+            </div>
+        </main>
+    </div>
+    <script type="text/javascript" src="/eel.js"></script>
+    <script type="text/javascript" src="script.js"></script>
+</body>
+</html>

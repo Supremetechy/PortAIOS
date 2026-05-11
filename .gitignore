@@ -12,6 +12,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*/__pycache__/
+**/__pycache__/
 
 # Build artifacts
 build/
@@ -20,4 +22,5 @@ dist/
 
 # macOS
 .DS_Store
+**/.DS_Store
 Icon?

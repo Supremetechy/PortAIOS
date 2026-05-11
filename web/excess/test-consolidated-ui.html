@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Consolidated UI</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #0a0a1f; color: #00ffff; }
+        .test-result { margin: 10px 0; padding: 10px; border: 1px solid #00ffff; }
+        .pass { border-color: #00ff00; color: #00ff00; }
+        .fail { border-color: #ff0000; color: #ff0000; }
+    </style>
+</head>
+<body>
+    <h1>Consolidated Avatar-Integration.html Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        const tests = [];
+        
+        function test(name, fn) {
+            try {
+                const result = fn();
+                tests.push({ name, passed: result, error: null });
+            } catch (e) {
+                tests.push({ name, passed: false, error: e.message });
+            }
+        }
+        
+        // Load the main file
+        fetch('avatar-integration.html')
+            .then(r => r.text())
+            .then(html => {
+                // Test structure
+                test('Has DOCTYPE', () => html.startsWith('<!DOCTYPE html>'));
+                test('Has html tag', () => html.includes('<html lang="en">'));
+                test('Has head section', () => html.includes('<head>') && html.includes('</head>'));
+                test('Has body section', () => html.includes('<body>') && html.includes('</body>'));
+                test('Has style section', () => html.includes('<style>') && html.includes('</style>'));
+                
+                // Test enhanced features
+                test('Has mode badge', () => html.includes('mode-badge'));
+                test('Has theme selector', () => html.includes('theme-selector-btn'));
+                test('Has gesture help', () => html.includes('gesture-help-btn'));
+                test('Has AI assistant', () => html.includes('ai-assistant-badge'));
+                test('Has voice indicator', () => html.includes('voice-indicator'));
+                
+                // Test original features
+                test('Has binary avatar', () => html.includes('BinaryAvatarRenderer') || html.includes('binary-avatar'));
+                test('Has dynamic UI', () => html.includes('dynamicUI') || html.includes('showDesktop'));
+                test('Has voice commands', () => html.includes('voice') && html.includes('command'));
+                test('Has telemetry', () => html.includes('telemetry'));
+                test('Has avatar controls', () => html.includes('Avatar State'));
+                
+                // Test JavaScript features
+                test('Has theme switching', () => html.includes('themes = {'));
+                test('Has gesture handling', () => html.includes('handleGesture'));
+                test('Has AI processing', () => html.includes('processAIQuery'));
+                test('Has keyboard shortcuts', () => html.includes('keydown'));
+                test('Has event listeners', () => html.includes('addEventListener'));
+                
+                // Display results
+                const resultsDiv = document.getElementById('results');
+                const passed = tests.filter(t => t.passed).length;
+                const total = tests.length;
+                
+                resultsDiv.innerHTML = `
+                    <h2>Test Results: ${passed}/${total} Passed</h2>
+                    ${tests.map(t => `
+                        <div class="test-result ${t.passed ? 'pass' : 'fail'}">
+                            ${t.passed ? '✓' : '✗'} ${t.name}
+                            ${t.error ? `<br><small>Error: ${t.error}</small>` : ''}
+                        </div>
+                    `).join('')}
+                    <h2 style="color: ${passed === total ? '#00ff00' : '#ff6600'}">
+                        ${passed === total ? '✅ ALL TESTS PASSED!' : '⚠️ SOME TESTS FAILED'}
+                    </h2>
+                `;
+            })
+            .catch(e => {
+                document.getElementById('results').innerHTML = 
+                    `<div class="test-result fail">✗ Failed to load file: ${e.message}</div>`;
+            });
+    </script>
+</body>
+</html>

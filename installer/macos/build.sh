@@ -45,18 +45,30 @@ fi
 
 echo "==> Built: $APP"
 
-# 5. Code signing (optional)
+# 5. Code signing
+#    Entitlements (mic, camera, hardened-runtime shims) must be applied
+#    even for ad-hoc local builds — otherwise macOS TCC silently denies
+#    microphone access when Chrome is launched from the bundle.
+ENTITLEMENTS="$PROJECT_ROOT/installer/macos/entitlements.plist"
+
 if [[ -n "${PORTAIOS_SIGN_IDENTITY:-}" ]]; then
     echo "==> Code signing with: $PORTAIOS_SIGN_IDENTITY"
-    codesign --deep --force --verify --verbose \
-        --sign "$PORTAIOS_SIGN_IDENTITY" \
-        --options runtime \
-        "$APP"
-    codesign --verify --verbose "$APP"
+    SIGN_ID="$PORTAIOS_SIGN_IDENTITY"
 else
-    echo "==> Skipping code signing (PORTAIOS_SIGN_IDENTITY not set)"
-    echo "    Unsigned .app will trigger Gatekeeper on other Macs."
+    echo "==> Ad-hoc signing with entitlements (no Developer ID set)"
+    echo "    Unsigned distribution still triggers Gatekeeper on other Macs."
+    SIGN_ID="-"
 fi
+
+codesign --deep --force --verify --verbose \
+    --sign "$SIGN_ID" \
+    --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    "$APP"
+
+codesign --verify --verbose "$APP"
+# Show what got embedded so voice/mic regressions are easy to diagnose.
+codesign -d --entitlements :- "$APP" 2>&1 | head -40 || true
 
 # 6. Optional DMG
 if [[ "${PORTAIOS_MAKE_DMG:-0}" == "1" ]]; then

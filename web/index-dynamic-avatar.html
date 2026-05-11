@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS — Dynamic Neural Interface</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Scrollable page overrides */
+        html, body {
+            overflow-y: auto !important;
+            overflow-x: hidden;
+            height: auto !important;
+            min-height: 100%;
+        }
+
+        #app {
+            height: auto !important;
+            min-height: 100vh;
+        }
+
+        /* Custom scrollbar styling */
+        body::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        body::-webkit-scrollbar-track {
+            background: rgba(0, 255, 255, 0.05);
+        }
+
+        body::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.3);
+            border-radius: 5px;
+            border: 2px solid var(--bg-0);
+        }
+
+        body::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 255, 0.5);
+        }
+
+        /* Dynamic UI enhancements */
+        .glitch-text {
+            position: relative;
+            display: inline-block;
+            animation: glitch 2s infinite;
+        }
+        
+        @keyframes glitch {
+            0%, 100% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(-2px, -2px); }
+            60% { transform: translate(2px, 2px); }
+            80% { transform: translate(2px, -2px); }
+        }
+
+        .file-item:hover {
+            animation: pulse 0.3s ease;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* Transition effects */
+        .mode-transition {
+            animation: fadeIn 0.8s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Voice command indicator */
+        .voice-indicator {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .voice-indicator:hover {
+            background: rgba(0, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .voice-indicator.active {
+            animation: voicePulse 1s infinite;
+        }
+
+        @keyframes voicePulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(0, 255, 255, 0.8); }
+        }
+
+        .controls-container {
+            position: fixed;
+            top: 100px;
+            right: 30px;
+            width: 300px;
+            max-height: 70vh;
+            background: rgba(0, 255, 255, 0.05);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        /* Mode indicator */
+        .mode-badge {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        /* Scrollbar styling for UI modes */
+        .ui-mode-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .ui-mode-container::-webkit-scrollbar-track {
+            background: rgba(0, 255, 255, 0.05);
+        }
+
+        .ui-mode-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .ui-mode-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 255, 0.5);
+        }
+
+        /* Loading animation */
+        .loading-spinner {
+            border: 3px solid rgba(0, 255, 255, 0.1);
+            border-top: 3px solid #00ffff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        
+    </style>
+</head>
+<body>
+
+    <!-- Loading animation -->
+    <div class="loading-spinner" id="loading-spinner"></div>
+
+
+    <!-- Corner brackets -->
+    <div class="corner-bracket cb-tl"></div>
+    <div class="corner-bracket cb-tr"></div>
+    <div class="corner-bracket cb-bl"></div>
+    <div class="corner-bracket cb-br"></div>
+
+    <!-- Background layers -->
+    <div class="bg-layer bg-grid"></div>
+    <div class="bg-layer bg-scan"></div>
+    <div class="bg-layer bg-vignette"></div>
+
+    <!-- Telemetry strip -->
+    <div class="telemetry">
+        <div class="tel-item"><span class="tel-dot"></span> AIOS</div>
+        <div class="tel-item"><span class="tel-dot"></span> DYNAMIC UI</div>
+        <div class="tel-item"><span class="tel-dot"></span> NEURAL INTERFACE</div>
+    </div>
+
+    <!-- Mode indicator -->
+    <div class="mode-badge" id="mode-badge">AVATAR MODE</div>
+
+    <!-- Voice command indicator -->
+    <div class="voice-indicator" id="voice-btn" title="Click to use voice commands">
+        🎤
+    </div>
+
+    <div id="app">
+        <!-- Header -->
+        <header class="boot" style="--d:0.1s">
+            <div class="logo-box">
+                <div class="logo">AIOS</div>
+                <div class="subtitle">Autonomous Intelligence Operating System</div>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-label">STATUS</span>
+                    <span class="status-value" id="system-status">ONLINE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">MODE</span>
+                    <span class="status-value" id="ui-mode">AVATAR</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">UPTIME</span>
+                    <span class="status-value" id="uptime">00:00:00</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main layout -->
+        <main class="boot" style="--d:0.2s">
+            <!-- Avatar container -->
+            <div class="avatar-section boot" style="--d:0.25s">
+                <div id="avatar-container" style="position: relative; width: 200%; height: 820px;"></div>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls-container boot" style="--d:0.3s">
+                <div class="controls boot" style="--d:0.4s">
+                    <h3>Dynamic UI Controls</h3>
+                    <div class="control-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px;">
+                        <button class="ui-btn" onclick="window.dynamicUI?.showDesktop()">
+                            📁 Desktop
+                        </button>
+                        <button class="ui-btn" onclick="showSampleDocument()">
+                            📄 Document
+                        </button>
+                        <button class="ui-btn" onclick="showSampleMedia()">
+                            🖼️ Media
+                        </button>
+                        <button class="ui-btn" onclick="window.dynamicUI?.showTerminal()">
+                            💻 Terminal
+                        </button>
+                        <button class="ui-btn" onclick="window.dynamicUI?.showBrowser('https://aios.dev', '<h1>AIOS Documentation</h1>')">
+                            🌐 Browser
+                        </button>
+                        <button class="ui-btn" onclick="window.dynamicUI?.backToAvatar()">
+                            ⚡ Avatar
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <h4 style="color: #00ffff; margin-bottom: 10px;">Voice Commands</h4>
+                        <div style="color: #00ffff; opacity: 0.7; font-size: 0.9em; line-height: 1.6;">
+                            • "Show my files" - Open desktop view<br>
+                            • "Open terminal" - Launch terminal<br>
+                            • "Back to avatar" - Return to avatar mode<br>
+                            • "Show me [filename]" - Open a file
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications -->
+            <div class="divider boot" style="--d:0.45s">
+                <div class="notifications boot" style="--d:0.5s">
+                    <h3>System Notifications</h3>
+                    <div id="notifications-container"></div>
+                </div>
+            </div>
+        </div>
+
+        </main>
+
+        <!-- Signature -->
+        <div class="signature boot" style="--d:0.55s">
+            <p>Dynamic Neural Interface — Voice Activated UI Transformation</p>
+        </div>
+    </div>
+
+    <!-- Eel JavaScript bridge -->
+    <script type="text/javascript" src="/eel.js"></script>
+
+    
+
+    <!-- Binary Avatar and Dynamic UI System -->
+    <script type="module">
+        import { BinaryAvatarRenderer } from './binary-avatar.js';
+        import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+
+        console.log('[AIOS] Initializing Dynamic Avatar Interface...');
+
+        let avatar = null;
+        let dynamicUI = null;
+        let uptime = 0;
+
+        // Initialize
+        async function init() {
+            const container = document.getElementById('avatar-container');
+            
+            // Create binary avatar
+            avatar = new BinaryAvatarRenderer(container, {
+                palette: 'cyan',
+                particleCount: 8000,
+                showEnvironment: true
+            });
+
+            avatar.setState('initializing');
+            
+            // Create dynamic UI manager
+            dynamicUI = new DynamicUIManager(container, avatar, {
+                transitionDuration: 800,
+                enableParticleEffects: true
+            });
+
+            // Make globally available
+            window.dynamicUI = dynamicUI;
+            window.avatar = avatar;
+
+            // Listen for mode changes
+            window.addEventListener('dynamicui:modeChanged', (e) => {
+                const { from, to } = e.detail;
+                console.log(`[DynamicUI] Mode changed: ${from} → ${to}`);
+                updateModeIndicator(to);
+                
+                // Update avatar state based on mode
+                if (to === 'avatar') {
+                    avatar.setState('idle');
+                } else {
+                    avatar.setState('background');
+                }
+            });
+
+            // Listen for file clicks
+            window.addEventListener('dynamicui:fileClicked', (e) => {
+                console.log('[DynamicUI] File clicked:', e.detail);
+            });
+
+            // Set initial state
+            avatar.setState('idle');
+
+            console.log('[AIOS] Dynamic Avatar Interface ready!');
+
+            // Load sample files from backend if available
+            if (typeof eel !== 'undefined') {
+                try {
+                    const files = await eel.get_desktop_files()();
+                    console.log('[AIOS] Loaded files from backend:', files);
+                } catch (err) {
+                    console.log('[AIOS] Running without backend, using sample data');
+                }
+            }
+        }
+
+        function updateModeIndicator(mode) {
+            const badge = document.getElementById('mode-badge');
+            const statusValue = document.getElementById('ui-mode');
+            const modeText = mode.toUpperCase() + ' MODE';
+            
+            if (badge) badge.textContent = modeText;
+            if (statusValue) statusValue.textContent = mode.toUpperCase();
+        }
+
+        // Sample functions
+        window.showSampleDocument = async function() {
+            const sampleContent = `
+                <h1>AIOS Dynamic UI System</h1>
+                <h2>Overview</h2>
+                <p>The AIOS Dynamic UI System enables seamless transformation between the binary avatar and various UI modes.</p>
+                
+                <h2>Available Modes</h2>
+                <ul>
+                    <li><strong>Avatar Mode</strong> - Interactive 3D binary avatar</li>
+                    <li><strong>Desktop Mode</strong> - File browser and folder navigation</li>
+                    <li><strong>Document Mode</strong> - Text and PDF viewer</li>
+                    <li><strong>Media Mode</strong> - Image and video player</li>
+                    <li><strong>Terminal Mode</strong> - Command line interface</li>
+                    <li><strong>Browser Mode</strong> - Web content viewer</li>
+                </ul>
+
+                <h2>Voice Commands</h2>
+                <p>Control the interface using natural language:</p>
+                <ul>
+                    <li>"Show my files" - Opens desktop view</li>
+                    <li>"Open terminal" - Launches terminal</li>
+                    <li>"Back to avatar" - Returns to avatar mode</li>
+                    <li>"Show me [filename]" - Opens specific file</li>
+                </ul>
+
+                <h2>Features</h2>
+                <ul>
+                    <li>Smooth transitions with particle effects</li>
+                    <li>Voice-activated UI transformations</li>
+                    <li>File system integration</li>
+                    <li>Multi-modal content viewing</li>
+                    <li>Real-time avatar state synchronization</li>
+                </ul>
+            `;
+            
+            await dynamicUI.showDocument('AIOS Dynamic UI System', sampleContent);
+        };
+
+        window.showSampleMedia = async function() {
+            // Use a placeholder image
+            await dynamicUI.showMedia('image', 'AIOSAvatarImg.png', 'AIOS Avatar');
+        };
+
+        // Voice command handling
+        const voiceBtn = document.getElementById('voice-btn');
+        let recognition = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                voiceBtn.classList.add('active');
+                console.log('[Voice] Listening...');
+            };
+
+            recognition.onend = () => {
+                voiceBtn.classList.remove('active');
+            };
+
+            recognition.onresult = async (event) => {
+                const text = event.results[0][0].transcript;
+                console.log('[Voice] Command:', text);
+                
+                // Process command
+                if (typeof eel !== 'undefined') {
+                    try {
+                        const result = await eel.process_ui_voice_command(text)();
+                        if (result) {
+                            await handleVoiceCommandResult(result);
+                        }
+                    } catch (err) {
+                        console.log('[Voice] Backend not available, using local processing');
+                        processVoiceCommandLocally(text);
+                    }
+                } else {
+                    processVoiceCommandLocally(text);
+                }
+            };
+
+            voiceBtn.addEventListener('click', () => {
+                recognition.start();
+                voiceBtn.classList.add('active');
+            });
+        } else {
+            voiceBtn.style.display = 'none';
+            console.log('[Voice] Speech recognition not supported');
+        }
+
+        async function handleVoiceCommandResult(result) {
+            console.log('[Voice] Processing result:', result);
+            
+            if (result.action === 'switch_mode') {
+                await handleModeSwitch(result.mode, result.data);
+            } else if (result.action === 'execute_command') {
+                await executeSystemCommand(result.command, result.data);
+            } else if (result.action === 'request_input') {
+                alert(result.message);
+            }
+        }
+        
+        async function executeSystemCommand(command, data) {
+            console.log('[System] Executing command:', command, data);
+            
+            if (typeof eel !== 'undefined') {
+                try {
+                    const result = await eel.execute_system_command(command, data)();
+                    console.log('[System] Result:', result);
+                    
+                    // Show result in terminal
+                    if (result.message) {
+                        dynamicUI.showTerminal(result.message);
+                    }
+                    
+                    // Speak result if available
+                    if (result.speak && 'speechSynthesis' in window) {
+                        const utterance = new SpeechSynthesisUtterance(result.speak);
+                        speechSynthesis.speak(utterance);
+                    }
+                } catch (err) {
+                    console.error('[System] Command failed:', err);
+                    dynamicUI.showTerminal(`Error: ${err.message}`);
+                }
+            } else {
+                console.log('[System] Backend not available');
+                dynamicUI.showTerminal('Backend connection required for system commands');
+            }
+        }
+
+        function processVoiceCommandLocally(text) {
+            const lower = text.toLowerCase();
+            
+            if (lower.includes('show') && (lower.includes('files') || lower.includes('desktop'))) {
+                dynamicUI.showDesktop(getSampleFiles(), '/home');
+            } else if (lower.includes('terminal')) {
+                dynamicUI.showTerminal();
+            } else if (lower.includes('back') || lower.includes('avatar')) {
+                dynamicUI.backToAvatar();
+            } else if (lower.includes('document')) {
+                showSampleDocument();
+            } else if (lower.includes('media') || lower.includes('image')) {
+                showSampleMedia();
+            } else if (lower.includes('browser')) {
+                dynamicUI.showBrowser('about:blank');
+            } else if (lower.includes('network')) {
+                dynamicUI.showTerminal('Network status: Connected\nIP: 127.0.0.1');
+            } else if (lower.includes('battery')) {
+                dynamicUI.showTerminal('Battery status: Charging\nLevel: 100%');
+            } else if (lower.includes('camera')) {
+                dynamicUI.showTerminal('Camera status: Active\nResolution: 1920x1080');
+            } else if (lower.includes('microphone')) {
+                dynamicUI.showTerminal('Microphone status: Active');
+            } else if (lower.includes('speaker')) {
+                dynamicUI.showTerminal('Speaker status: Active');
+            } else if (lower.includes('status')) {
+                dynamicUI.showTerminal('System status: Online\nBackend: Not connected');
+            } else if (lower.includes('notification')) {
+                showNotifications();
+            } else {
+                dynamicUI.showTerminal(`Unrecognized command: "${text}"`);
+            } 
+        }
+
+        async function handleModeSwitch(mode, data) {
+            switch (mode) {
+                case 'desktop':
+                    if (typeof eel !== 'undefined' && !data.files) {
+                        const result = await eel.get_desktop_files(data.path)();
+                        dynamicUI.showDesktop(result.files, result.path);
+                    } else {
+                        dynamicUI.showDesktop(data.files || getSampleFiles(), data.path || '/home');
+                    }
+                    break;
+                case 'document':
+                    if (typeof eel !== 'undefined' && data.filename) {
+                        const result = await eel.get_document_content(data.filename)();
+                        dynamicUI.showDocument(result.title, result.content);
+                    } else {
+                        showSampleDocument();
+                    }
+                    break;
+                case 'media':
+                    dynamicUI.showMedia(data.type, data.url || data.filename, data.title);
+                    break;
+                case 'terminal':
+                    dynamicUI.showTerminal(data.message);
+                    break;
+                case 'browser':
+                    dynamicUI.showBrowser(data.url, data.content);
+                    break;
+                case 'notifications':
+                    await showNotifications();
+                    break;
+                case 'avatar':
+                    dynamicUI.backToAvatar();
+                    break;
+            }
+        }
+        
+        async function showNotifications() {
+            let notifications = [];
+            
+            if (typeof eel !== 'undefined') {
+                try {
+                    notifications = await eel.get_system_notifications()();
+                } catch (err) {
+                    console.log('[Notifications] Backend not available');
+                }
+            }
+            
+            // Add sample notifications if none available
+            if (notifications.length === 0) {
+                notifications = [
+                    {
+                        id: 'welcome',
+                        type: 'info',
+                        title: 'Welcome to AIOS',
+                        message: 'Dynamic Neural Interface Active',
+                        timestamp: 'now'
+                    },
+                    {
+                        id: 'voice',
+                        type: 'success',
+                        title: 'Voice Commands Ready',
+                        message: 'Click the microphone to use voice control',
+                        timestamp: '1 min ago'
+                    }
+                ];
+            }
+            
+            // Create notifications HTML
+            const notifHtml = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #00ffff; margin-bottom: 20px;">Notifications</h2>
+                    ${notifications.map(n => `
+                        <div style="
+                            background: rgba(0, 255, 255, 0.05);
+                            border: 1px solid rgba(0, 255, 255, 0.2);
+                            padding: 15px;
+                            margin-bottom: 10px;
+                            border-radius: 4px;
+                        ">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="color: #00ffff;">${n.title}</strong>
+                                <span style="color: #00ffff88; font-size: 0.8em;">${n.timestamp}</span>
+                            </div>
+                            <p style="margin: 10px 0 0 0; color: #00ffff;">${n.message}</p>
+                        </div>
+                    `).join('')}
+                    <button onclick="window.clearNotifications()" style="
+                        background: rgba(0, 255, 255, 0.1);
+                        border: 1px solid #00ffff;
+                        color: #00ffff;
+                        padding: 10px 20px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        margin-top: 10px;
+                    ">Clear All</button>
+                </div>
+            `;
+            
+            dynamicUI.showDocument('System Notifications', notifHtml);
+        }
+        
+        window.clearNotifications = async function() {
+            if (typeof eel !== 'undefined') {
+                try {
+                    await eel.clear_system_notifications()();
+                } catch (err) {
+                    console.log('[Notifications] Backend not available');
+                }
+            }
+            dynamicUI.backToAvatar();
+        };
+
+        function getSampleFiles() {
+            return [
+                { name: 'Documents', type: 'folder', size: '' },
+                { name: 'Pictures', type: 'folder', size: '' },
+                { name: 'Videos', type: 'folder', size: '' },
+                { name: 'Projects', type: 'folder', size: '' },
+                { name: 'readme.txt', type: 'document', size: '2.4 KB' },
+                { name: 'aios_guide.md', type: 'document', size: '15.8 KB' },
+                { name: 'avatar.png', type: 'image', size: '256 KB', url: 'AIOSAvatarImg.png' },
+                { name: 'demo.mp4', type: 'video', size: '4.2 MB' },
+                { name: 'kernel.py', type: 'code', size: '8.1 KB' },
+                { name: 'config.json', type: 'code', size: '1.2 KB' },
+            ];
+        }
+
+        // Uptime counter
+        setInterval(() => {
+            uptime++;
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            const seconds = uptime % 60;
+            const uptimeEl = document.getElementById('uptime');
+            if (uptimeEl) {
+                uptimeEl.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

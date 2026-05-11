@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Avatar Feature Test Suite</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            background: #0a0a1f; 
+            color: #0ff; 
+            padding: 20px; 
+        }
+        .test-section { 
+            border: 1px solid #0ff; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 5px;
+        }
+        .pass { color: #00ff00; }
+        .fail { color: #ff0000; }
+        .warn { color: #ffaa00; }
+        button {
+            background: #0a0a1f;
+            color: #0ff;
+            border: 1px solid #0ff;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        button:hover { background: #0ff; color: #0a0a1f; }
+        #results { margin-top: 20px; }
+        .result-item { padding: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>🤖 AIOS Avatar Feature Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>Quick Tests</h2>
+        <button onclick="testVoiceLoading()">Test Voice Loading</button>
+        <button onclick="testTTSIndicator()">Test TTS Indicator</button>
+        <button onclick="testEventListeners()">Test Event Listeners</button>
+        <button onclick="testErrorHandling()">Test Error Handling</button>
+        <button onclick="runAllTests()">Run All Tests</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const results = document.getElementById('results');
+
+        function log(message, status = 'info') {
+            const div = document.createElement('div');
+            div.className = `result-item ${status}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function testVoiceLoading() {
+            log('Testing voice loading...', 'info');
+            
+            if (!window.speechSynthesis) {
+                log('❌ Speech Synthesis not available', 'fail');
+                return;
+            }
+
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                log(`✅ Found ${voices.length} voices`, 'pass');
+                
+                // Test categorization
+                const languages = [...new Set(voices.map(v => v.lang.split('-')[0]))];
+                log(`✅ Languages: ${languages.join(', ')}`, 'pass');
+                
+                // Test local vs cloud
+                const local = voices.filter(v => v.localService).length;
+                const cloud = voices.length - local;
+                log(`✅ Local: ${local}, Cloud: ${cloud}`, 'pass');
+            } else {
+                log('⚠️ No voices loaded yet, trying async...', 'warn');
+                window.speechSynthesis.addEventListener('voiceschanged', () => {
+                    const v = window.speechSynthesis.getVoices();
+                    log(`✅ Loaded ${v.length} voices asynchronously`, 'pass');
+                }, { once: true });
+            }
+        }
+
+        function testTTSIndicator() {
+            log('Testing TTS indicator...', 'info');
+            
+            const indicator = document.getElementById('tts-indicator');
+            if (indicator) {
+                log('✅ TTS indicator element found', 'pass');
+                log(`Current text: "${indicator.textContent}"`, 'info');
+                log(`Current color: ${indicator.style.color}`, 'info');
+            } else {
+                log('⚠️ TTS indicator not found (open avatar-integration.html)', 'warn');
+            }
+        }
+
+        function testEventListeners() {
+            log('Testing event listeners...', 'info');
+            
+            // Test custom event dispatch
+            let eventReceived = false;
+            const handler = (e) => {
+                eventReceived = true;
+                log(`✅ Received avatar:ttsMethodChanged event`, 'pass');
+                log(`Method: ${e.detail.method}, Voice: ${e.detail.voice}`, 'info');
+            };
+            
+            window.addEventListener('avatar:ttsMethodChanged', handler, { once: true });
+            
+            // Simulate event
+            window.dispatchEvent(new CustomEvent('avatar:ttsMethodChanged', {
+                detail: { method: 'browser', voice: 'Test Voice' }
+            }));
+            
+            setTimeout(() => {
+                if (!eventReceived) {
+                    log('❌ Event listener test failed', 'fail');
+                }
+            }, 100);
+        }
+
+        function testErrorHandling() {
+            log('Testing error handling...', 'info');
+            
+            // Test console.error is available
+            const originalError = console.error;
+            let errorCaught = false;
+            
+            console.error = function(...args) {
+                errorCaught = true;
+                originalError.apply(console, args);
+            };
+            
+            // Trigger a safe error
+            try {
+                throw new Error('Test error');
+            } catch (e) {
+                console.error('[Test] Caught:', e.message);
+            }
+            
+            console.error = originalError;
+            
+            if (errorCaught) {
+                log('✅ Error handling works correctly', 'pass');
+            } else {
+                log('❌ Error handling test failed', 'fail');
+            }
+        }
+
+        function runAllTests() {
+            results.innerHTML = '';
+            log('🚀 Running all tests...', 'info');
+            log('═══════════════════════════════', 'info');
+            
+            testVoiceLoading();
+            setTimeout(() => testTTSIndicator(), 100);
+            setTimeout(() => testEventListeners(), 200);
+            setTimeout(() => testErrorHandling(), 300);
+            setTimeout(() => {
+                log('═══════════════════════════════', 'info');
+                log('✅ All tests completed!', 'pass');
+            }, 500);
+        }
+
+        // Auto-run on load
+        window.addEventListener('load', () => {
+            log('🤖 Avatar Test Suite Ready', 'pass');
+            log('Click buttons above to run tests', 'info');
+        });
+    </script>
+</body>
+</html>

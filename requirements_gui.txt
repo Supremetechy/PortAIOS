@@ -4,6 +4,13 @@
 # Core GUI framework
 PyQt6>=6.4.0
 
+# Native webview backend used by kernel/display/webview_backend.py.
+# IMPORTANT: install `pywebview`, not `webview` — the latter is an
+# unmaintained, broken PyPI package whose wheel build fails. pywebview
+# installs an importable module named `webview`, which is what the kernel
+# code expects.
+pywebview>=5.0
+
 # Multimedia support (try both options)
 # Option 1: PyQt6-Multimedia (preferred, if available)
 # PyQt6-Multimedia>=6.4.0

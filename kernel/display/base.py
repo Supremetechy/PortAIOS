@@ -23,6 +23,24 @@ class EventType(Enum):
     VOICE_COMMAND = "voice_command"
     KEY_PRESS = "key_press"
     RESIZE = "resize"
+    ERROR = "error"
+    WARNING = "warning"
+    INFO = "info"
+    PROGRESS = "progress"
+    DONE = "done"
+    AVATAR_STATE = "avatar_state"
+    SYSTEM_STATS = "system_stats"
+    AUDIO_STATE = "audio_state"
+    AUDIO_COMMAND = "audio_command"
+    AUDIO_START = "audio_start"
+    AUDIO_STOP = "audio_stop"
+    AUDIO_PAUSE = "audio_pause"
+    AUDIO_RESUME = "audio_resume"
+    AUDIO_VOLUME = "audio_volume"
+    AUDIO_MUTE = "audio_mute"
+    AUDIO_UNMUTE = "audio_unmute"
+    AUDIO_PLAY = "audio_play"
+
 
 
 @dataclass

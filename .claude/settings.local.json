@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(awk '{print $1}')",
+      "Bash(git diff *)",
+      "Bash(xargs -0 du -ch)"
+    ]
+  }
+}

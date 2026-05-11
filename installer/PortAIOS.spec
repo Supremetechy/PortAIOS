@@ -41,6 +41,10 @@ hiddenimports = [
     "kernel.boot",
     "kernel.system_monitor",
     "kernel.hardware_detection",
+    "kernel.voice_commands",
+    "kernel.viseme_integration",
+    "kernel.voice_assistant",
+    "kernel.piper_viseme_server",
     "installer.first_run",
 ]
 
@@ -92,7 +96,11 @@ exe = EXE(
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
-    entitlements_file=None,
+    entitlements_file=(
+        str(INSTALLER_DIR / "macos" / "entitlements.plist")
+        if sys.platform == "darwin"
+        else None
+    ),
     icon=icon_file if Path(icon_file).exists() else None,
 )
 

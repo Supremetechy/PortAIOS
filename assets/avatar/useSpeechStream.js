@@ -16,7 +16,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 
 // Reuse the same mapping used by Avatar.jsx. Import it if you prefer.
-import { PHONEME_TO_VISEME } from './phonemeMap'; // or inline the table
+import { PHONEME_TO_VISEME } from './phonemeMap.js';
 
 // Module-level shared context — one AudioContext per tab is best practice.
 let sharedCtx = null;

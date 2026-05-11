@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Voice input / TTS preview / viseme capture -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Avatar camera features -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
+    <!-- Let spawned helpers (Chrome, avatar-bridge subprocess) inherit
+         the parent's TCC grants instead of being prompted separately. -->
+    <key>com.apple.security.cs.inherit</key>
+    <true/>
+
+    <!-- PyInstaller bundles unsigned dylibs; hardened runtime would
+         otherwise refuse to load them. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Required for the CPython interpreter under hardened runtime. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Permit DYLD_* and friends when launching helper subprocesses. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+</dict>
+</plist>

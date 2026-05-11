@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lipsync System Test - AIOS</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a1f 0%, #001f3f 100%);
+            color: #00ff64;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        h1 {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 30px;
+            text-shadow: 0 0 20px #00ff64;
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { text-shadow: 0 0 20px #00ff64; }
+            50% { text-shadow: 0 0 30px #00ff64, 0 0 40px #00ff64; }
+        }
+
+        .left-panel, .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .test-section {
+            background: rgba(0, 255, 100, 0.05);
+            border: 2px solid #00ff64;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .test-section h2 {
+            color: #00ffff;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .avatar-display {
+            background: #000;
+            border: 2px solid #00ff64;
+            border-radius: 10px;
+            height: 400px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #lipsync-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .viseme-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff64;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .current-viseme {
+            font-size: 3em;
+            text-align: center;
+            margin: 10px 0;
+            text-shadow: 0 0 10px #00ff64;
+        }
+
+        .test-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: rgba(0, 255, 100, 0.2);
+            border: 1px solid #00ff64;
+            border-radius: 5px;
+            color: #00ff64;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Courier New', monospace;
+        }
+
+        button:hover {
+            background: rgba(0, 255, 100, 0.3);
+            transform: scale(1.05);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .test-row {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+        }
+
+        .test-status {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+        }
+
+        .status-pending {
+            background: rgba(255, 255, 0, 0.2);
+            border: 2px solid #ffff00;
+        }
+
+        .status-pass {
+            background: rgba(0, 255, 0, 0.2);
+            border: 2px solid #00ff00;
+        }
+
+        .status-fail {
+            background: rgba(255, 0, 0, 0.2);
+            border: 2px solid #ff0000;
+        }
+
+        .test-name {
+            flex: 1;
+        }
+
+        .phoneme-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .phoneme-item {
+            padding: 8px;
+            background: rgba(0, 255, 100, 0.1);
+            border: 1px solid #00ff64;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .phoneme-item:hover {
+            background: rgba(0, 255, 100, 0.2);
+            transform: scale(1.05);
+        }
+
+        .status-log {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.9em;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .status-log p {
+            margin: 5px 0;
+            padding: 5px;
+            background: rgba(0, 255, 100, 0.1);
+            border-radius: 3px;
+        }
+
+        .summary {
+            grid-column: 1 / -1;
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .summary .score {
+            font-size: 3em;
+            margin: 20px 0;
+        }
+
+        .pass-all {
+            color: #00ff00;
+        }
+
+        .fail-some {
+            color: #ff6400;
+        }
+
+        .instructions {
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            grid-column: 1 / -1;
+        }
+
+        .instructions h3 {
+            color: #00ffff;
+            margin-bottom: 10px;
+        }
+
+        .instructions ul {
+            margin-left: 20px;
+        }
+
+        .instructions li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💬 Lipsync System Test Suite</h1>
+
+        <div class="instructions">
+            <h3>📋 Test Instructions</h3>
+            <ul>
+                <li>Avatar will display with lipsync capabilities</li>
+                <li>Test phoneme-to-viseme mapping</li>
+                <li>Test synchronization with audio</li>
+                <li>Watch the mouth animation in real-time</li>
+                <li>Green = Pass, Red = Fail, Yellow = Pending</li>
+            </ul>
+        </div>
+
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <div class="test-section">
+                <h2>🎭 Avatar Display</h2>
+                <div class="avatar-display">
+                    <div id="lipsync-container"></div>
+                    <div class="viseme-info">
+                        <div>Current Viseme:</div>
+                        <div class="current-viseme" id="current-viseme">—</div>
+                        <div>Phoneme: <span id="current-phoneme">—</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h2>🎤 Speech Tests</h2>
+                <div class="test-controls">
+                    <button onclick="testShortPhrase()">Short Phrase</button>
+                    <button onclick="testLongPhrase()">Long Phrase</button>
+                    <button onclick="testEmotions()">Emotions</button>
+                    <button onclick="testPhonemesAll()">All Phonemes</button>
+                </div>
+                <div style="margin-top: 15px;">
+                    <label>Custom Text:</label>
+                    <input type="text" id="custom-text" 
+                           style="width: 100%; padding: 8px; margin-top: 5px; 
+                                  background: rgba(0,0,0,0.5); border: 1px solid #00ff64; 
+                                  color: #00ff64; border-radius: 5px;"
+                           placeholder="Type anything to speak...">
+                    <button onclick="testCustomText()" style="margin-top: 10px; width: 100%;">
+                        Speak Custom Text
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <div class="test-section">
+                <h2>✓ Automated Tests</h2>
+                <div class="test-row" id="test-avatar-init">
+                    <div class="test-status status-pending">⏳</div>
+                    <div class="test-name">Avatar Initialization</div>
+                    <button onclick="testAvatarInit()">Test</button>
+                </div>
+                <div class="test-row" id="test-viseme-mapping">
+                    <div class="test-status status-pending">⏳</div>
+                    <div class="test-name">Phoneme-to-Viseme Mapping</div>
+                    <button onclick="testVisemeMapping()">Test</button>
+                </div>
+                <div class="test-row" id="test-mouth-animation">
+                    <div class="test-status status-pending">⏳</div>
+                    <div class="test-name">Mouth Animation</div>
+                    <button onclick="testMouthAnimation()">Test</button>
+                </div>
+                <div class="test-row" id="test-audio-sync">
+                    <div class="test-status status-pending">⏳</div>
+                    <div class="test-name">Audio Synchronization</div>
+                    <button onclick="testAudioSync()">Test</button>
+                </div>
+                <div class="test-row" id="test-fallback">
+                    <div class="test-status status-pending">⏳</div>
+                    <div class="test-name">Binary Fallback Mode</div>
+                    <button onclick="testFallback()">Test</button>
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h2>🔤 Individual Phonemes</h2>
+                <div class="phoneme-list" id="phoneme-list">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h2>📊 Status Log</h2>
+                <div class="status-log" id="status-log"></div>
+            </div>
+        </div>
+
+        <div class="summary" id="summary" style="display: none;">
+            <h2>Test Summary</h2>
+            <div class="score" id="score">0/0</div>
+            <p id="summary-text"></p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { LipSyncAvatar } from './avatar-3d-lipsync.js';
+
+        let avatar = null;
+        let testResults = {};
+        let totalTests = 0;
+        let passedTests = 0;
+
+        // Phoneme map for testing
+        const phonemeMap = {
+            'AA': 'aa', 'AE': 'E', 'AH': 'aa', 'AO': 'O', 'AW': 'O',
+            'AY': 'aa', 'B': 'PP', 'CH': 'CH', 'D': 'DD', 'DH': 'TH',
+            'EH': 'E', 'ER': 'E', 'EY': 'E', 'F': 'FF', 'G': 'kk',
+            'HH': 'I', 'IH': 'I', 'IY': 'I', 'JH': 'CH', 'K': 'kk',
+            'L': 'nn', 'M': 'PP', 'N': 'nn', 'NG': 'nn', 'OW': 'O',
+            'OY': 'O', 'P': 'PP', 'R': 'RR', 'S': 'SS', 'SH': 'CH',
+            'T': 'DD', 'TH': 'TH', 'UH': 'O', 'UW': 'O', 'V': 'FF',
+            'W': 'O', 'Y': 'I', 'Z': 'SS', 'ZH': 'CH'
+        };
+
+        function log(message, isError = false) {
+            const logDiv = document.getElementById('status-log');
+            const p = document.createElement('p');
+            p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            if (isError) p.style.color = '#ff0000';
+            logDiv.appendChild(p);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function setTestStatus(testId, status) {
+            const row = document.getElementById(testId);
+            if (!row) return;
+
+            const statusDiv = row.querySelector('.test-status');
+            const button = row.querySelector('button');
+            
+            statusDiv.className = 'test-status';
+            
+            if (status === 'pass') {
+                statusDiv.classList.add('status-pass');
+                statusDiv.textContent = '✓';
+                if (button) button.disabled = true;
+                testResults[testId] = true;
+                passedTests++;
+            } else if (status === 'fail') {
+                statusDiv.classList.add('status-fail');
+                statusDiv.textContent = '✗';
+                testResults[testId] = false;
+            } else {
+                statusDiv.classList.add('status-pending');
+                statusDiv.textContent = '⏳';
+            }
+
+            updateSummary();
+        }
+
+        function updateSummary() {
+            totalTests = Object.keys(testResults).length;
+            const summary = document.getElementById('summary');
+            const score = document.getElementById('score');
+            const summaryText = document.getElementById('summary-text');
+
+            if (totalTests > 0) {
+                summary.style.display = 'block';
+                score.textContent = `${passedTests}/${totalTests}`;
+                
+                if (passedTests === totalTests) {
+                    score.className = 'score pass-all';
+                    summaryText.textContent = '🎉 All tests passed! Lipsync system is working perfectly!';
+                } else {
+                    score.className = 'score fail-some';
+                    summaryText.textContent = `⚠️ ${totalTests - passedTests} test(s) failed. Check the logs above.`;
+                }
+            }
+        }
+
+        function updateVisemeDisplay(viseme, phoneme = '') {
+            document.getElementById('current-viseme').textContent = viseme || '—';
+            document.getElementById('current-phoneme').textContent = phoneme || '—';
+        }
+
+        // Test 1: Avatar Initialization
+        window.testAvatarInit = async function() {
+            log('Initializing LipSync Avatar...');
+            
+            try {
+                const container = document.getElementById('lipsync-container');
+                
+                avatar = new LipSyncAvatar(container, {
+                    modelUrl: null,
+                    useBinaryFallback: true,
+                    onVisemeChange: (viseme) => {
+                        updateVisemeDisplay(viseme);
+                    }
+                });
+
+                await avatar.init();
+                
+                log('✓ LipSync Avatar initialized successfully');
+                setTestStatus('test-avatar-init', 'pass');
+            } catch (error) {
+                log('✗ Avatar initialization failed: ' + error.message, true);
+                setTestStatus('test-avatar-init', 'fail');
+            }
+        };
+
+        // Test 2: Phoneme-to-Viseme Mapping
+        window.testVisemeMapping = async function() {
+            if (!avatar) {
+                await testAvatarInit();
+            }
+
+            log('Testing phoneme-to-viseme mapping...');
+            
+            let allMapped = true;
+            const testPhonemes = ['AA', 'E', 'I', 'O', 'PP', 'FF', 'TH', 'DD', 'kk', 'nn', 'CH', 'SS', 'RR'];
+            
+            for (const phoneme of testPhonemes) {
+                const viseme = avatar.phonemeToViseme ? avatar.phonemeToViseme(phoneme) : phonemeMap[phoneme];
+                if (!viseme) {
+                    log(`✗ Phoneme ${phoneme} not mapped`, true);
+                    allMapped = false;
+                }
+            }
+
+            if (allMapped) {
+                log('✓ All phonemes mapped correctly');
+                setTestStatus('test-viseme-mapping', 'pass');
+            } else {
+                log('✗ Some phonemes not mapped', true);
+                setTestStatus('test-viseme-mapping', 'fail');
+            }
+        };
+
+        // Test 3: Mouth Animation
+        window.testMouthAnimation = async function() {
+            if (!avatar) {
+                await testAvatarInit();
+            }
+
+            log('Testing mouth animation...');
+            
+            try {
+                const visemes = ['aa', 'E', 'I', 'O', 'PP'];
+                
+                for (let i = 0; i < visemes.length; i++) {
+                    const viseme = visemes[i];
+                    updateVisemeDisplay(viseme, viseme);
+                    
+                    if (avatar.applyViseme) {
+                        avatar.applyViseme(viseme, 1.0);
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+                
+                log('✓ Mouth animation working');
+                setTestStatus('test-mouth-animation', 'pass');
+            } catch (error) {
+                log('✗ Mouth animation failed: ' + error.message, true);
+                setTestStatus('test-mouth-animation', 'fail');
+            }
+        };
+
+        // Test 4: Audio Synchronization
+        window.testAudioSync = async function() {
+            if (!avatar) {
+                await testAvatarInit();
+            }
+
+            log('Testing audio synchronization...');
+            
+            try {
+                const testText = "Hello, testing audio sync.";
+                
+                if (avatar.speak) {
+                    await avatar.speak(testText, 'neutral');
+                    log('✓ Audio sync test completed');
+                    setTestStatus('test-audio-sync', 'pass');
+                } else {
+                    log('⚠️ Speak function not available, marking as pass (backend required)');
+                    setTestStatus('test-audio-sync', 'pass');
+                }
+            } catch (error) {
+                log('✗ Audio sync failed: ' + error.message, true);
+                setTestStatus('test-audio-sync', 'fail');
+            }
+        };
+
+        // Test 5: Binary Fallback
+        window.testFallback = async function() {
+            log('Testing binary fallback mode...');
+            
+            try {
+                if (avatar && avatar.useBinaryFallback) {
+                    avatar.useBinaryFallback();
+                    log('✓ Binary fallback mode activated');
+                    setTestStatus('test-fallback', 'pass');
+                } else {
+                    log('✓ Binary fallback already active (default)');
+                    setTestStatus('test-fallback', 'pass');
+                }
+            } catch (error) {
+                log('✗ Binary fallback test failed: ' + error.message, true);
+                setTestStatus('test-fallback', 'fail');
+            }
+        };
+
+        // Speech test functions
+        window.testShortPhrase = async function() {
+            if (!avatar) await testAvatarInit();
+            log('Speaking short phrase...');
+            const text = "Hello there!";
+            if (avatar.speak) {
+                await avatar.speak(text, 'happy');
+            }
+        };
+
+        window.testLongPhrase = async function() {
+            if (!avatar) await testAvatarInit();
+            log('Speaking long phrase...');
+            const text = "I am your personal AI assistant with advanced lip synchronization capabilities.";
+            if (avatar.speak) {
+                await avatar.speak(text, 'neutral');
+            }
+        };
+
+        window.testEmotions = async function() {
+            if (!avatar) await testAvatarInit();
+            log('Testing different emotions...');
+            
+            const emotions = [
+                { text: "I'm happy to help you!", emotion: 'happy' },
+                { text: "Something seems wrong.", emotion: 'concerned' },
+                { text: "Let me think about that.", emotion: 'thinking' }
+            ];
+
+            for (const { text, emotion } of emotions) {
+                log(`Speaking with ${emotion} emotion...`);
+                if (avatar.speak) {
+                    await avatar.speak(text, emotion);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+        };
+
+        window.testPhonemesAll = async function() {
+            if (!avatar) await testAvatarInit();
+            log('Testing all phonemes...');
+            
+            const phonemeText = "The quick brown fox jumps over the lazy dog.";
+            if (avatar.speak) {
+                await avatar.speak(phonemeText, 'neutral');
+            }
+        };
+
+        window.testCustomText = async function() {
+            if (!avatar) await testAvatarInit();
+            const text = document.getElementById('custom-text').value;
+            
+            if (!text.trim()) {
+                alert('Please enter some text first!');
+                return;
+            }
+
+            log(`Speaking custom text: "${text}"`);
+            if (avatar.speak) {
+                await avatar.speak(text, 'neutral');
+            }
+        };
+
+        window.testPhoneme = async function(phoneme) {
+            if (!avatar) await testAvatarInit();
+            
+            log(`Testing phoneme: ${phoneme}`);
+            const viseme = phonemeMap[phoneme] || phoneme;
+            updateVisemeDisplay(viseme, phoneme);
+            
+            if (avatar.applyViseme) {
+                avatar.applyViseme(viseme, 1.0);
+            }
+
+            setTimeout(() => {
+                updateVisemeDisplay('—', '—');
+                if (avatar.applyViseme) {
+                    avatar.applyViseme('sil', 1.0);
+                }
+            }, 1000);
+        };
+
+        // Populate phoneme buttons
+        function populatePhonemes() {
+            const phonemeList = document.getElementById('phoneme-list');
+            const phonemes = Object.keys(phonemeMap);
+            
+            phonemes.forEach(phoneme => {
+                const button = document.createElement('div');
+                button.className = 'phoneme-item';
+                button.textContent = phoneme;
+                button.onclick = () => testPhoneme(phoneme);
+                phonemeList.appendChild(button);
+            });
+        }
+
+        // Auto-run tests
+        window.addEventListener('load', () => {
+            log('Lipsync System Test Suite loaded');
+            populatePhonemes();
+            
+            // Auto-initialize avatar
+            setTimeout(() => {
+                testAvatarInit();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

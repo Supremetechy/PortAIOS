@@ -3,21 +3,24 @@
 // Renders a Ready Player Me glTF head, drives ARKit blendshapes from a
 // viseme keyframe stream synchronized to a Web Audio AudioBufferSourceNode.
 //
-// Usage:
-//   <Avatar
-//     agentId="grahm"
-//     modelUrl="/avatars/grahm.glb"
-//     speechStream={speechStream}   // see useSpeechStream hook below
-//     emotion="neutral"             // 'neutral' | 'happy' | 'focused' | 'concerned'
-//   />
+// NOTE: written with React.createElement instead of JSX so it can be loaded
+// directly by the browser via the project's importmap with no build step.
+// The file keeps the .jsx extension for editor association only.
 
 import React, { useRef, useEffect, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
-import { PHONEME_TO_VISEME } from './phonemeMap';
+import { PHONEME_TO_VISEME } from './phonemeMap.js';
+//import { useAudio } from './Audio.jsx';
+//import { useGLTFModel } from './GLTF.jsx';
+//import { ARKit } from 'react-native-arkit';
 
-// ─── Emotion presets → blendshape weight targets ──────────────────────
+//import ARKit blendshapes: https://developer.apple.com/documentation/arkit/arfaceanchor/blendshapelocationnamingconvention
+
+
+const DEFAULT_EXPRESSION = 'neutral';
+
 const EMOTION_PRESETS = {
   neutral:   {},
   happy:     { mouthSmileLeft: 0.6, mouthSmileRight: 0.6, cheekSquintLeft: 0.3, cheekSquintRight: 0.3, browInnerUp: 0.15 },
@@ -26,8 +29,7 @@ const EMOTION_PRESETS = {
   thinking:  { browDownLeft: 0.25, browDownRight: 0.25, mouthPucker: 0.15 },
 };
 
-// ─── Critically-damped spring for blendshape smoothing ────────────────
-// Avoids "robotic" snap-to-target; gives ~50ms coarticulation blur.
+// Critically-damped spring; ~50ms half-life avoids robotic snap-to-target.
 function springStep(current, target, velocity, dt, halfLife = 0.045) {
   const omega = Math.log(2) / halfLife;
   const dx = target - current;
@@ -41,7 +43,8 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
   const { scene } = useGLTF(modelUrl);
   const headRef = useRef();
 
-  // Collect every mesh that has morph targets (RPM splits head/teeth/tongue).
+  // RPM splits the head across multiple meshes (head/teeth/tongue);
+  // every mesh with a morphTargetDictionary must be driven.
   const morphMeshes = useMemo(() => {
     const meshes = [];
     scene.traverse((obj) => {
@@ -50,34 +53,57 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
     return meshes;
   }, [scene]);
 
-  // Per-blendshape state: { name: { value, velocity } }
+  // Diagnostic on first load: log which morphs the GLB actually has and
+  // which phonemeMap targets are missing. If this prints "missing 15/15"
+  // it means the GLB doesn't have RPM/Oculus viseme blendshapes and
+  // lip sync will be silent (mouth won't move) regardless of the audio.
+  useEffect(() => {
+    if (morphMeshes.length === 0) {
+      console.warn('[Avatar] Loaded GLB has no morph targets — lip sync is impossible');
+      return;
+    }
+    const present = new Set();
+    for (const mesh of morphMeshes) {
+      for (const name of Object.keys(mesh.morphTargetDictionary || {})) {
+        present.add(name);
+      }
+    }
+    const expected = new Set(Object.values(PHONEME_TO_VISEME));
+    const missing = [...expected].filter((n) => !present.has(n));
+    const found = [...expected].filter((n) => present.has(n));
+    console.log('[Avatar] morph targets present on GLB:', [...present].sort());
+    console.log(
+      `[Avatar] phoneme-map coverage: ${found.length}/${expected.size}` +
+      (missing.length ? ` — missing: ${missing.join(', ')}` : ' — all visemes present ✓')
+    );
+    const arkitProbes = ['jawOpen', 'eyeBlinkLeft', 'eyeBlinkRight', 'mouthSmileLeft', 'browInnerUp'];
+    const arkitMissing = arkitProbes.filter((n) => !present.has(n));
+    if (arkitMissing.length === arkitProbes.length) {
+      console.warn('[Avatar] No ARKit blendshapes detected — emotions/blink/jaw drive will be no-ops');
+    }
+  }, [morphMeshes]);
+
   const stateRef = useRef({});
   const blinkRef = useRef({ next: performance.now() + 3000, closing: false, phase: 0 });
 
   useFrame((_, dt) => {
-    if (!speechStream.current) return;
+    if (!speechStream || !speechStream.current) return;
 
-    // 1. Resolve current audio time in the speech stream's clock domain.
-    //    This is the single source of truth for lip-sync timing.
-    const audioT = speechStream.current.getCurrentTime(); // seconds, or null if idle
+    const audioT = speechStream.current.getCurrentTime();
 
-    // 2. Compute target viseme weights at this audio time.
-    const targets = { ...EMOTION_PRESETS[emotion] || {} };
+    const targets = { ...(EMOTION_PRESETS[emotion] || {}) };
 
     if (audioT != null) {
       const kf = speechStream.current.getActiveVisemes(audioT);
-      // kf is [{ viseme, weight }, ...] already cross-faded between adjacent phonemes
       for (const { viseme, weight } of kf) {
         targets[viseme] = (targets[viseme] || 0) + weight;
       }
-      // Jaw openness derived from vowel visemes for extra liveliness
       const jawDrive = (targets['viseme_aa'] || 0) * 0.9
                      + (targets['viseme_O']  || 0) * 0.7
                      + (targets['viseme_E']  || 0) * 0.4;
       targets['jawOpen'] = Math.min(1, jawDrive);
     }
 
-    // 3. Blink scheduler (independent of speech).
     const now = performance.now();
     const blink = blinkRef.current;
     if (now >= blink.next && !blink.closing) {
@@ -85,7 +111,7 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
       blink.phase = 0;
     }
     if (blink.closing) {
-      blink.phase += dt / 0.12; // 120ms full blink
+      blink.phase += dt / 0.12;
       const b = blink.phase < 0.5
         ? blink.phase * 2
         : (1 - (blink.phase - 0.5) * 2);
@@ -97,7 +123,6 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
       }
     }
 
-    // 4. Apply to every mesh with a morphTargetDictionary.
     for (const mesh of morphMeshes) {
       const dict = mesh.morphTargetDictionary;
       const influences = mesh.morphTargetInfluences;
@@ -114,22 +139,30 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
     }
   });
 
-  return <primitive ref={headRef} object={scene} position={[0, -1.55, 0]} />;
+  return React.createElement('primitive', {
+    ref: headRef,
+    object: scene,
+    position: [0, -1.55, 0],
+  });
 }
 
 export default function Avatar({ agentId, modelUrl, speechStream, emotion = 'neutral' }) {
-  return (
-    <Canvas
-      camera={{ position: [0, 0.05, 0.75], fov: 22 }}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
-      dpr={[1, 2]}
-    >
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[2, 3, 2]} intensity={1.1} />
-      <Suspense fallback={null}>
-        <AvatarHead modelUrl={modelUrl} speechStream={speechStream} emotion={emotion} />
-        <Environment preset="studio" />
-      </Suspense>
-    </Canvas>
+  return React.createElement(
+    Canvas,
+    {
+      camera: { position: [0, 0.05, 0.75], fov: 18, near: 0.1, far: 1000 },
+      gl: { antialias: true, powerPreference: 'high-performance' },
+      dpr: [1, 2],
+    },
+    React.createElement('ambientLight', { intensity: 0.5 }),
+    React.createElement('directionalLight', { position: [2, 3, 2], intensity: 1.1 }),
+    React.createElement(
+      Suspense,
+      { fallback: null },
+      React.createElement(AvatarHead, { modelUrl, speechStream, emotion }),
+      React.createElement(Environment, { preset: 'studio' })
+    )
   );
 }
+
+export { EMOTION_PRESETS, springStep, AvatarHead };

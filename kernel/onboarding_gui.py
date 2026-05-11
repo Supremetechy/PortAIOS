@@ -13,11 +13,24 @@ import json
 import signal
 import subprocess
 import logging
+import mimetypes
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 import bottle
+import threading
+
+# Browsers reject <script type="module"> with a non-JS MIME type (Chrome/Safari
+# strict MIME checking). Python's stdlib mimetypes doesn't know .jsx by default,
+# so Bottle's static_file falls back to text/html and ESM imports fail with
+# "'text/html' is not a valid JavaScript MIME type". Register the mapping once
+# at import time before any request is served.
+mimetypes.add_type("application/javascript", ".jsx")
+mimetypes.add_type("application/javascript", ".mjs")
+# IANA-registered types for glTF assets — used by the React 3D avatar GLB load.
+mimetypes.add_type("model/gltf-binary", ".glb")
+mimetypes.add_type("model/gltf+json", ".gltf")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AIOS")
@@ -44,9 +57,42 @@ WEB_FOLDER = str(_AIOS_ROOT / "web")
 eel.init(WEB_FOLDER)
 
 
+_JS_MODULE_EXTS = (".jsx", ".mjs", ".js")
+
+
 @bottle.route("/assets/<filename:path>")
 def serve_static_assets(filename):
+    # Pass mimetype explicitly for ESM-bound files. Some Python builds don't
+    # honor mimetypes.add_type for bottle.static_file (or the registry hasn't
+    # been re-imported), and Chrome rejects <script type="module"> with a
+    # text/html response. This belt-and-suspenders the global registration
+    # done at the top of the module.
+    if filename.lower().endswith(_JS_MODULE_EXTS):
+        return bottle.static_file(
+            filename,
+            root=str(_AIOS_ROOT / "assets"),
+            mimetype="application/javascript",
+        )
     return bottle.static_file(filename, root=str(_AIOS_ROOT / "assets"))
+
+
+@bottle.route("/models/<filename:path>")
+def serve_models(filename):
+    """Expose models/ so the web UI can fetch generated avatar.glb files."""
+    lower = filename.lower()
+    if lower.endswith(".glb"):
+        return bottle.static_file(
+            filename,
+            root=str(_AIOS_ROOT / "models"),
+            mimetype="model/gltf-binary",
+        )
+    if lower.endswith(".gltf"):
+        return bottle.static_file(
+            filename,
+            root=str(_AIOS_ROOT / "models"),
+            mimetype="model/gltf+json",
+        )
+    return bottle.static_file(filename, root=str(_AIOS_ROOT / "models"))
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +122,7 @@ class OnboardingConfig:
             "auto_start": False,
             "telemetry_enabled": True,
             "completed_steps": [],
+            "hardware_summary": None,
         }
 
     def save(self):
@@ -171,6 +218,75 @@ ONBOARDING_STEPS = [
 onboarding_config = OnboardingConfig()
 
 
+def _serialize_system_specs(specs) -> Dict[str, Any]:
+    gpu_processors = [
+        processor for processor in specs.processors
+        if getattr(processor.processor_type, "value", "") == "gpu"
+    ]
+    accelerator_processors = [
+        processor for processor in specs.processors
+        if getattr(processor.processor_type, "value", "") in {"gpu", "npu", "tpu", "vpu"}
+    ]
+
+    return {
+        "hostname": specs.hostname,
+        "os_type": specs.os_type,
+        "os_version": specs.os_version,
+        "kernel_version": specs.kernel_version,
+        "architecture": specs.architecture,
+        "memory": {
+            "total_gb": round(specs.memory.total_gb, 2),
+            "available_gb": round(specs.memory.available_gb, 2),
+            "used_gb": round(specs.memory.used_gb, 2),
+        },
+        "storage_devices": [
+            {
+                "device_name": device.device_name,
+                "mount_point": device.mount_point,
+                "total_gb": round(device.total_gb, 2),
+                "used_gb": round(device.used_gb, 2),
+                "filesystem_type": device.filesystem_type,
+                "is_ssd": device.is_ssd,
+                "model": device.model,
+            }
+            for device in specs.storage_devices
+        ],
+        "network_interfaces": specs.network_interfaces,
+        "processors": [
+            {
+                "processor_type": processor.processor_type.value,
+                "vendor": processor.vendor.value,
+                "model": processor.model,
+                "cores": processor.cores,
+                "threads": processor.threads,
+                "frequency_mhz": processor.frequency_mhz,
+                "memory_gb": processor.memory_gb,
+                "compute_capability": processor.compute_capability,
+                "driver_version": processor.driver_version,
+                "capabilities": processor.capabilities[:12],
+            }
+            for processor in specs.processors
+        ],
+        "gpu_count": len(gpu_processors),
+        "has_gpu": bool(gpu_processors),
+        "accelerator_count": len(accelerator_processors),
+    }
+
+
+def _onboarding_state() -> Dict[str, Any]:
+    return {
+        "step": get_current_step_data(),
+        "config": dict(onboarding_config.config),
+        "redirect_url": "avatar-integration.html",
+    }
+
+
+def _startup_page() -> str:
+    if onboarding_config.config.get("onboarding_complete"):
+        return "avatar-integration.html"
+    return "index.html"
+
+
 # ---------------------------------------------------------------------------
 # Eel-exposed functions (called from JavaScript)
 # ---------------------------------------------------------------------------
@@ -183,6 +299,7 @@ def get_current_step_data():
         return {
             "index": idx,
             "total_steps": len(ONBOARDING_STEPS),
+            "key": step["key"],
             "title": step["title"],
             "description": step["description"],
             "speech": step.get("speech", step["description"]),
@@ -191,6 +308,11 @@ def get_current_step_data():
             "video_url": AIAssistantVideos.get_video_path(step["key"]),
         }
     return None
+
+
+@eel.expose
+def get_onboarding_state():
+    return _onboarding_state()
 
 
 @eel.expose
@@ -212,6 +334,91 @@ def previous_step():
         onboarding_config.save()
         return get_current_step_data()
     return None
+
+
+@eel.expose
+def update_onboarding_config(updates: Optional[Dict[str, Any]] = None):
+    if not isinstance(updates, dict):
+        return {"success": False, "error": "Invalid onboarding update payload"}
+
+    allowed_fields = {
+        "user_name": str,
+        "system_name": str,
+        "install_path": str,
+        "gpu_enabled": bool,
+        "auto_start": bool,
+        "telemetry_enabled": bool,
+    }
+
+    for field, expected_type in allowed_fields.items():
+        if field not in updates:
+            continue
+        value = updates[field]
+        if expected_type is bool:
+            onboarding_config.config[field] = bool(value)
+        elif value is None:
+            onboarding_config.config[field] = ""
+        else:
+            onboarding_config.config[field] = str(value).strip()
+
+    onboarding_config.save()
+    return {"success": True, **_onboarding_state()}
+
+
+@eel.expose
+def detect_hardware():
+    try:
+        from kernel.hardware_detection import HardwareDetector
+
+        detector = HardwareDetector()
+        specs = detector.detect_all()
+        summary = _serialize_system_specs(specs)
+        onboarding_config.config["hardware_summary"] = summary
+        onboarding_config.config["gpu_enabled"] = bool(summary.get("has_gpu"))
+        onboarding_config.save()
+        return {"success": True, "hardware": summary, **_onboarding_state()}
+    except Exception as e:
+        logger.exception("Hardware detection failed")
+        return {"success": False, "error": str(e), **_onboarding_state()}
+
+
+@eel.expose
+def complete_onboarding():
+    user_name = str(onboarding_config.config.get("user_name", "")).strip()
+    system_name = str(onboarding_config.config.get("system_name", "")).strip()
+    install_path = str(onboarding_config.config.get("install_path", "")).strip()
+
+    if not user_name or not system_name:
+        return {
+            "success": False,
+            "error": "Please enter both your name and a system name before continuing.",
+            **_onboarding_state(),
+        }
+
+    if not install_path:
+        return {
+            "success": False,
+            "error": "Please choose an installation path before continuing.",
+            **_onboarding_state(),
+        }
+
+    onboarding_config.config["onboarding_complete"] = True
+    onboarding_config.config["current_step"] = len(ONBOARDING_STEPS) - 1
+    onboarding_config.config["completed_steps"] = list(range(len(ONBOARDING_STEPS)))
+    onboarding_config.save()
+    return {"success": True, "redirect_url": "avatar-integration.html", **_onboarding_state()}
+
+
+@eel.expose
+def reset_onboarding():
+    completed_steps = onboarding_config.config.get("completed_steps", [])
+    onboarding_config.config["onboarding_complete"] = False
+    onboarding_config.config["current_step"] = 0
+    onboarding_config.config["completed_steps"] = []
+    if isinstance(completed_steps, list) and len(completed_steps) >= 1:
+        onboarding_config.config["completed_steps"] = []
+    onboarding_config.save()
+    return {"success": True, **_onboarding_state()}
 
 
 @eel.expose
@@ -265,35 +472,55 @@ _bridge_process: Optional[subprocess.Popen] = None
 
 
 def start_avatar_bridge() -> Optional[subprocess.Popen]:
-    """Start the avatar WebSocket bridge (ws://localhost:8765)."""
+    """Start the avatar WebSocket bridge (ws://localhost:8765).
+
+    Tries the full TTS+lip-sync bridge first (web/avatar-bridge.py). If that
+    isn't available, falls back to the lightweight viseme simulator at
+    server.py — which still produces a working stream so the UI animates.
+    """
     global _bridge_process
 
     bridge_script = _AIOS_ROOT / "web" / "avatar-bridge.py"
-    if not bridge_script.exists():
-        logger.warning("avatar-bridge.py not found — avatar will use browser TTS")
-        return None
+    fallback_script = _AIOS_ROOT / "server.py"
 
-    tts_engine = "fallback"
-    try:
-        from TTS.api import TTS  # noqa: F401
-        tts_engine = "coqui"
-        logger.info("Coqui TTS available — using high-fidelity voice")
-    except Exception as e:
-        logger.info(f"Coqui TTS not available ({e}) — avatar will use browser TTS")
+    if bridge_script.exists():
+        tts_engine = "fallback"
+        try:
+            from TTS.api import TTS  # noqa: F401
+            tts_engine = "coqui"
+            logger.info("Coqui TTS available — using high-fidelity voice")
+        except Exception as e:
+            logger.info(f"Coqui TTS not available ({e}) — avatar will use browser TTS")
 
-    logger.info("Starting avatar WebSocket bridge...")
-    proc = subprocess.Popen(
-        _python_subprocess_cmd("avatar-bridge", bridge_script, "--tts", tts_engine),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    time.sleep(2)
-    if proc.poll() is not None:
-        logger.error("Avatar bridge exited prematurely")
-        return None
-    logger.info(f"Avatar bridge running (PID {proc.pid})")
-    _bridge_process = proc
-    return proc
+        logger.info("Starting avatar WebSocket bridge (full)...")
+        proc = subprocess.Popen(
+            _python_subprocess_cmd("avatar-bridge", bridge_script, "--tts", tts_engine),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(2)
+        if proc.poll() is None:
+            logger.info(f"Avatar bridge running (PID {proc.pid})")
+            _bridge_process = proc
+            return proc
+        logger.warning("Full avatar bridge exited prematurely — trying fallback simulator")
+
+    if fallback_script.exists():
+        logger.info("Starting fallback viseme simulator (server.py) on ws://127.0.0.1:8765 ...")
+        proc = subprocess.Popen(
+            _python_subprocess_cmd("avatar-bridge-fallback", fallback_script),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(1)
+        if proc.poll() is None:
+            logger.info(f"Fallback viseme simulator running (PID {proc.pid})")
+            _bridge_process = proc
+            return proc
+        logger.error("Fallback simulator exited prematurely")
+
+    logger.warning("No avatar bridge available — avatar will use browser TTS only")
+    return None
 
 
 def stop_avatar_bridge():
@@ -323,6 +550,7 @@ def start_eel_app():
     os.environ["PORTAIOS_GUI_RUNNING"] = "1"
 
     bridge = start_avatar_bridge()
+    pending_cleanup_timer = None
     
     # Setup voice command handlers
     try:
@@ -358,9 +586,51 @@ def start_eel_app():
         import traceback
         traceback.print_exc()
 
+    # Setup filesystem / dynamic UI data providers used by avatar-integration.html
+    try:
+        from kernel.ui_data_provider import setup_ui_data_provider
+        ui_provider = setup_ui_data_provider()
+        logger.info("UI data provider enabled")
+    except Exception as e:
+        ui_provider = None
+        logger.warning(f"UI data provider not available: {e}")
+
+    try:
+        from kernel.ai_file_operations import setup_ai_file_operations
+        setup_ai_file_operations(ui_provider)
+        logger.info("AI file operations enabled")
+    except Exception as e:
+        logger.warning(f"AI file operations not available: {e}")
+
+    try:
+        from kernel.ui_voice_commands import setup_ui_voice_commands
+        setup_ui_voice_commands()
+        logger.info("UI voice commands enabled")
+    except Exception as e:
+        logger.warning(f"UI voice commands not available: {e}")
+
     def cleanup(signum=None, frame=None):
         stop_avatar_bridge()
         os._exit(0)
+
+    def close_callback(page, sockets):
+        nonlocal pending_cleanup_timer
+
+        if sockets:
+            if pending_cleanup_timer is not None:
+                pending_cleanup_timer.cancel()
+                pending_cleanup_timer = None
+            return
+
+        def _delayed_cleanup():
+            logger.info("No active Eel sockets after grace period; shutting down UI backend")
+            cleanup()
+
+        if pending_cleanup_timer is not None:
+            pending_cleanup_timer.cancel()
+        pending_cleanup_timer = threading.Timer(2.5, _delayed_cleanup)
+        pending_cleanup_timer.daemon = True
+        pending_cleanup_timer.start()
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
@@ -402,6 +672,29 @@ def start_eel_app():
     except Exception as e:
         logger.warning(f"Agent executor not available: {e}")
 
+    # ── Avatar customizer — exposed to the web UI ──────────────────────
+    @eel.expose
+    def generate_custom_avatar(params: Optional[Dict[str, Any]] = None):
+        """Generate a customized AI_Avatar.glb from UI sliders.
+
+        Writes to models/avatar_generated.glb (NOT avatar.glb — that path is
+        reserved for the Ready Player Me head used by the React 3D lip-sync
+        avatar, which needs morphs this generator does not produce). The
+        returned URL points at the generated file for preview only; the
+        REACT_3D mode continues to load the RPM avatar.glb separately.
+        """
+        from kernel.avatar_generator import generate_from_dict, DEFAULT_OUTPUT
+        result = generate_from_dict(params, output_path=str(DEFAULT_OUTPUT))
+        if result.get("success"):
+            result["model_url"] = f"/models/avatar_generated.glb?v={int(time.time())}"
+        return result
+
+    @eel.expose
+    def get_avatar_default_params():
+        """Expose AvatarParams defaults so the UI can render initial slider values."""
+        from kernel.avatar_generator import AvatarParams
+        return AvatarParams().to_dict()
+
     # Add speak_with_lipsync function for Piper TTS integration
     @eel.expose
     def speak_with_lipsync(text: str):
@@ -422,21 +715,91 @@ def start_eel_app():
     
     try:
         logger.info("Starting AIOS onboarding UI on http://localhost:8001 ...")
-        eel.start(
-            "avatar-integration.html",  # Use avatar interface
-            host="localhost",
-            port=8001,
-            size=(1280, 800),
-            mode="default",
-            block=True,
-        )
+
+        startup_page = _startup_page()
+        url = f"http://localhost:8001/{startup_page}"
+
+        if sys.platform == "darwin":
+            # macOS TCC (microphone) permissions are assigned to the
+            # "responsible" process. When Eel's default launcher spawns
+            # Chrome via subprocess.Popen, Chrome inherits PortAIOS.app as
+            # its responsible process — and the ad-hoc-signed bundle has no
+            # mic entitlement, so Chrome's getUserMedia silently fails.
+            #
+            # `open -na` routes the launch through Launch Services, which
+            # makes Chrome its own responsible process and its existing
+            # per-origin mic permission applies normally.
+            import time as _time
+            import subprocess as _sp
+
+            def _launch_detached() -> bool:
+                # Wait briefly for the Eel server to bind to :8001 before
+                # handing the URL to Chrome.
+                _time.sleep(1.2)
+                candidates = [
+                    "Google Chrome",
+                    "Microsoft Edge",
+                    "Brave Browser",
+                    "Chromium",
+                ]
+                for app_name in candidates:
+                    if not Path(f"/Applications/{app_name}.app").exists():
+                        continue
+                    try:
+                        _sp.Popen(
+                            [
+                                "/usr/bin/open",
+                                "-a",
+                                app_name,
+                                "--args",
+                                f"--app={url}",
+                                "--window-size=1280,800",
+                            ],
+                            stdout=_sp.DEVNULL,
+                            stderr=_sp.DEVNULL,
+                        )
+                        logger.info(
+                            f"Launched {app_name} via Launch Services "
+                            "(detached for TCC/microphone)"
+                        )
+                        return True
+                    except Exception as e:
+                        logger.warning(f"Failed to launch {app_name}: {e}")
+                logger.warning(
+                    "No Chromium browser found in /Applications. "
+                    f"Open manually: {url}"
+                )
+                return False
+
+            threading.Thread(target=_launch_detached, daemon=True).start()
+
+            # Start Eel server without launching a browser (we handle it manually above)
+            eel.start(
+                startup_page,
+                host="localhost",
+                port=8001,
+                size=(1280, 800),
+                mode=None,  # Explicitly no browser launch - we do it manually
+                block=True,
+                close_callback=close_callback,
+            )
+        else:
+            eel.start(
+                startup_page,
+                host="localhost",
+                port=8001,
+                size=(1280, 800),
+                mode="default",
+                block=True,
+            )
     except (SystemExit, KeyboardInterrupt):
         pass
     except Exception as e:
-        logger.warning(f"Chrome/Edge app mode unavailable ({e}), opening in browser")
+        logger.warning(f"UI launch issue ({e}); running headless on :8001")
         try:
+            startup_page = _startup_page()
             eel.start(
-                "index-voice-enabled.html",  # Use voice-enabled interface
+                startup_page,
                 host="localhost",
                 port=8001,
                 size=(1280, 800),

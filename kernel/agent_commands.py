@@ -190,6 +190,17 @@ def browse_filesystem(ctx: Dict[str, Any] = {}) -> CommandResult:
     except Exception as e:
         return CommandResult(False, str(e), speak=f"Error browsing filesystem: {e}")
 
+# 3.5 CREATE DIRECTORY
+def create_directory(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Create a new directory."""
+    path = ctx.get("path", str(Path.home()))
+    try:
+        p = Path(path).expanduser().resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return CommandResult(True, f"Created directory: {p}", speak=f"Directory {p.name} created.")
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not create directory: {e}")
+    
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. CREATE DOCUMENT
@@ -214,6 +225,93 @@ def create_document(ctx: Dict[str, Any] = {}) -> CommandResult:
         )
     except Exception as e:
         return CommandResult(False, str(e), speak=f"Could not create document: {e}")
+    
+# 4.5 Write to documents
+def write_document(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Write to an existing text file / document."""
+    name = ctx.get("name", f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    content = ctx.get("content", "")
+    directory = ctx.get("directory", str(Path.home() / "Documents"))
+
+    try:
+        d = Path(directory).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        filepath = d / name
+        if not filepath.exists():
+            return CommandResult(False, f"File does not exist: {filepath}", speak=f"File {name} does not exist.")
+        with filepath.open("a") as f:
+            f.write("\n" + content)
+        return CommandResult(
+            True,
+            f"Updated: {filepath}",
+            data={"path": str(filepath)},
+            speak=f"Document {name} updated in {d.name}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not update document: {e}")
+    
+# 4.6 Read from documents
+def read_document(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Read from an existing text file / document."""
+    name = ctx.get("name", f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    directory = ctx.get("directory", str(Path.home() / "Documents"))
+
+    try:
+        d = Path(directory).expanduser()
+        filepath = d / name
+        if not filepath.exists():
+            return CommandResult(False, f"File does not exist: {filepath}", speak=f"File {name} does not exist.")
+        content = filepath.read_text()
+        return CommandResult(
+            True,
+            f"Content of {filepath}:\n{content[:2000]}",
+            data={"path": str(filepath), "content": content},
+            speak=f"Read document {name} from {d.name}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not read document: {e}")
+    
+# 4.7 Edit document (overwrite)
+def edit_document(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Edit an existing text file / document."""
+    name = ctx.get("name", f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    content = ctx.get("content", "")
+    directory = ctx.get("directory", str(Path.home() / "Documents"))
+
+    try:
+        d = Path(directory).expanduser()
+        filepath = d / name
+        filepath.write_text(content)
+        return CommandResult(
+            True,
+            f"Edited: {filepath}",
+            data={"path": str(filepath)},
+            speak=f"Document {name} edited in {d.name}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not edit document: {e}")
+    
+    
+# 4.8 Delete document
+def delete_document(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Delete an existing text file / document."""
+    name = ctx.get("name", f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    directory = ctx.get("directory", str(Path.home() / "Documents"))
+
+    try:
+        d = Path(directory).expanduser()
+        filepath = d / name
+        if not filepath.exists():
+            return CommandResult(False, f"File does not exist: {filepath}", speak=f"File {name} does not exist.")
+        filepath.unlink()
+        return CommandResult(
+            True,
+            f"Deleted: {filepath}",
+            data={"path": str(filepath)},
+            speak=f"Document {name} deleted from {d.name}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not delete document: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -278,7 +376,7 @@ def check_network(ctx: Dict[str, Any] = {}) -> CommandResult:
             from kernel.network import NetworkManager
             nm = NetworkManager()
             nm.initialize()
-            for iface in nm.interfaces:
+            for iface in nm.interfaces.values():
                 info = f"{iface.name}: {iface.state.value}"
                 if iface.ip_addresses:
                     info += f" — {iface.ip_addresses[0].address}"
@@ -504,6 +602,13 @@ def check_compatibility(ctx: Dict[str, Any] = {}) -> CommandResult:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def open_application(ctx: Dict[str, Any] = {}) -> CommandResult:
+    import subprocess
+    import shutil
+    from pathlib import Path
+    from datetime import datetime
+    import platform
+    import sys
+
     """Open an installed application by name."""
     app_name = ctx.get("app", "")
     if not app_name:
@@ -560,6 +665,9 @@ def open_application(ctx: Dict[str, Any] = {}) -> CommandResult:
                                     speak=f"Opening {app_name}.")
             return CommandResult(False, f"Could not open {app_name}",
                                 speak=f"Failed to open {app_name}.")
+
+        return CommandResult(False, f"Unsupported platform: {system}",
+                            speak=f"I can't launch applications on {system}.")
 
     except Exception as e:
         return CommandResult(False, str(e), speak=f"Failed to open {app_name}: {e}")
@@ -704,7 +812,7 @@ def hardware_info(ctx: Dict[str, Any] = {}) -> CommandResult:
         lines.append(f"Memory: {specs.memory.total_gb:.1f} GB total, {specs.memory.available_gb:.1f} GB available")
         lines.append(f"Storage: {len(specs.storage_devices)} device(s)")
         for dev in specs.storage_devices:
-            lines.append(f"  {dev.name}: {dev.total_gb:.1f} GB")
+            lines.append(f"  {dev.device_name}: {dev.total_gb:.1f} GB")
 
         cpu_name = specs.processors[0].model if specs.processors else "unknown"
         gpu_count = sum(1 for p in specs.processors if p.processor_type.value == "gpu")
@@ -794,4 +902,10 @@ COMMANDS = {
     "hardware_info":      hardware_info,
     "open_file_manager":  open_file_manager,
     "list_processes":     list_processes,
+    "write_document":     write_document,
+    "read_document":      read_document,
+    "edit_document":      edit_document,
+    "delete_document":    delete_document,
+    "create_directory":   create_directory
+    
 }

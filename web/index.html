@@ -7,28 +7,100 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="bg-layer bg-grid"></div>
+    <div class="bg-layer bg-glow"></div>
+    <div class="bg-layer bg-noise"></div>
+    <div class="bg-layer bg-vignette"></div>
+
+    <div class="telemetry">
+        <span class="tel-item"><span class="tel-dot"></span>Onboarding Active</span>
+        <span class="tel-item">CPU <span id="telemetry-cpu">--%</span></span>
+        <span class="tel-item">Memory <span id="telemetry-memory">--%</span></span>
+        <span class="tel-item">Disk <span id="telemetry-disk">--%</span></span>
+        <span class="tel-clock" id="telemetry-clock">--:--:--</span>
+    </div>
+
     <div id="app">
         <header>
-            <h1>AIOS Setup Wizard</h1>
-            <div id="progress-bar"></div>
-        </header>
-        <main>
-            <div id="agent-avatar">
-                <!-- Agent Avatar Video will go here -->
-                <video id="avatar-video" autoplay loop muted></video>
-                <div id="avatar-placeholder">
-                    🤖 AI Assistant Video
+            <div class="eyebrow">
+                <span class="mark">AIOS</span>
+                <span>Personal Agentic OS</span>
+                <span class="mark-sep">/</span>
+                <span id="step-key-label">Welcome</span>
+            </div>
+            <h1><span class="h1-label">Set Up</span><span class="h1-emph">Your System</span></h1>
+            <div class="progress-gauge">
+                <div class="gauge-track">
+                    <div class="gauge-fill" id="progress-fill"></div>
+                    <div class="gauge-ticks">
+                        <span style="left: 16.66%"></span>
+                        <span style="left: 33.33%"></span>
+                        <span style="left: 50%"></span>
+                        <span style="left: 66.66%"></span>
+                        <span style="left: 83.33%"></span>
+                    </div>
                 </div>
+                <div class="gauge-readout"><span id="progress-readout">1</span><span class="gauge-sep">/</span><span id="progress-total">5</span></div>
             </div>
-            <div id="onboarding-content">
-                <!-- Onboarding steps will be dynamically loaded here -->
-                <h2>Welcome to AIOS!</h2>
-                <p>I am your personal AI Agent. Let's get you set up.</p>
-                <button id="next-button">Next →</button>
-            </div>
+        </header>
+
+        <main>
+            <section class="panel avatar-pod boot" style="--d:0.1s">
+                <div class="panel-corners"><span></span><span></span><span></span><span></span></div>
+                <div class="pod-header">
+                    <span class="pod-tag">Guide <em id="avatar-status-text">Initializing</em></span>
+                    <span class="pod-status"><span class="pulse"></span>Live</span>
+                </div>
+                <div id="agent-avatar" class="pod-stage">
+                    <div id="binary-avatar-container"></div>
+                    <div id="avatar-placeholder">
+                        <div class="loader-ring"></div>
+                        <span>AI guide standby</span>
+                    </div>
+                    <video id="avatar-video" style="display:none;"></video>
+                </div>
+                <div class="pod-footer">
+                    <span class="hud-line"><span class="hud-k">Voice</span><span class="hud-v" id="voice-status">Standby</span></span>
+                    <span class="hud-line"><span class="hud-k">Mic</span><span class="hud-v" id="mic-status">Browser</span></span>
+                    <span class="hud-line"><span class="hud-k">Speech</span><span class="hud-v" id="speech-status">Ready</span></span>
+                    <span class="hud-bars" id="voice-bars"><span></span><span></span><span></span><span></span></span>
+                </div>
+            </section>
+
+            <section id="onboarding-content" class="panel content-panel boot" style="--d:0.22s">
+                <div class="panel-corners"><span></span><span></span><span></span><span></span></div>
+                <div class="content-meta">
+                    <span><span class="meta-k">Step</span> <span class="meta-v" id="step-counter">1 of 5</span></span>
+                    <span><span class="meta-k">Mode</span> <span class="meta-v">Guided Setup</span></span>
+                </div>
+                <h2 id="step-title">Welcome to AIOS</h2>
+                <p id="agent-line">I am your personal AI agent. I will walk you through configuring your Personal AI Agentic OS.</p>
+                <div id="step-body" class="step-body"></div>
+                <div class="actions">
+                    <button id="prev-button" type="button">Back</button>
+                    <button id="next-button" type="button" class="btn btn-primary">
+                        <span class="btn-glyph">→</span>
+                        <span id="next-button-label">Next</span>
+                    </button>
+                </div>
+                <div class="content-footer">
+                    <span id="wizard-status">Waiting for backend...</span>
+                    <span id="voice-hint-footer">Voice commands: next, back, repeat, help</span>
+                    <button id="restart-onboarding-button" type="button" class="footer-action" style="display:none;">Restart Onboarding</button>
+                </div>
+            </section>
         </main>
+
+        <div class="signature">
+            <span id="system-name-label">AIOS setup session</span>
+            <span id="install-path-label">Install path pending</span>
+        </div>
     </div>
+
+    <div id="voice-ui-container" class="holo-card glow-edge panel-box"></div>
+
     <script type="text/javascript" src="/eel.js"></script>
-    <script type="text/javascript" src="script.js"></script>
+    <script type="module" src="./onboarding-app.js"></script>
+    <script type="text/javascript" src="./script.js"></script>
 </body>
 </html>

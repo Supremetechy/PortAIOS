@@ -35,13 +35,13 @@ logger = logging.getLogger("AIOS.agent")
 @dataclass
 class IntentPattern:
     """Maps a regex pattern to a command key and optional context extractor."""
-    pattern: re.Pattern
+    pattern: "re.Pattern[str]"
     command: str
-    extract: Optional[Callable[[re.Match, str], Dict[str, Any]]] = None
+    extract: Optional[Callable[["re.Match[str]", str], Dict[str, Any]]] = None
     description: str = ""
 
 
-def _extract_url(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_url(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     """Pull a URL from the utterance."""
     url_match = re.search(r'(https?://\S+)', text)
     if url_match:
@@ -56,14 +56,14 @@ def _extract_url(m: re.Match, text: str) -> Dict[str, Any]:
     return {}
 
 
-def _extract_path(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_path(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     path_match = re.search(r'(?:in|at|of|to|from)\s+["\']?([~/][\w/.@\- ]+)', text, re.I)
     if path_match:
         return {"path": path_match.group(1).strip().rstrip(".")}
     return {}
 
 
-def _extract_app(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_app(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     # "open safari" / "launch terminal" / "start vscode"
     app_match = re.search(
         r'(?:open|launch|start|run)\s+(?:the\s+)?(?:app(?:lication)?\s+)?(.+)',
@@ -74,7 +74,7 @@ def _extract_app(m: re.Match, text: str) -> Dict[str, Any]:
     return {}
 
 
-def _extract_package(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_package(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     pkg_match = re.search(
         r'(?:install|download|get)\s+(?:the\s+)?(?:package\s+)?(.+)',
         text, re.I,
@@ -84,7 +84,7 @@ def _extract_package(m: re.Match, text: str) -> Dict[str, Any]:
     return {}
 
 
-def _extract_doc(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_doc(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     ctx: Dict[str, Any] = {}
     name_match = re.search(r'(?:called|named|titled)\s+["\']?([^"\']+)', text, re.I)
     if name_match:
@@ -98,7 +98,7 @@ def _extract_doc(m: re.Match, text: str) -> Dict[str, Any]:
     return ctx
 
 
-def _extract_search(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_search(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     ctx: Dict[str, Any] = {}
     s = re.search(r'(?:search|find|look)\s+(?:for\s+)?(?:files?\s+)?(?:named?\s+)?(.+)', text, re.I)
     if s:
@@ -109,14 +109,14 @@ def _extract_search(m: re.Match, text: str) -> Dict[str, Any]:
     return ctx
 
 
-def _extract_command(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_command(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     c = re.search(r'(?:run|execute|do)\s+(?:the\s+)?(?:command\s+)?["\']?(.+?)["\']?\s*$', text, re.I)
     if c:
         return {"command": c.group(1).strip()}
     return {}
 
 
-def _extract_compat(m: re.Match, text: str) -> Dict[str, Any]:
+def _extract_compat(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     c = re.search(r'(?:compatib\w+|compat)\s+(?:of|for|with|check)?\s*(.+)', text, re.I)
     if c:
         return {"target": c.group(1).strip().rstrip(".")}
@@ -347,7 +347,9 @@ class AgentExecutor:
     def _match_intent(self, text: str) -> Tuple[Optional[str], Dict[str, Any]]:
         """Find the best-matching intent for the input text."""
         for intent in INTENTS:
-            m = intent.pattern.search(text)
+            # pylint quirk: re.Pattern is a class with .search(), but pylint
+            # mistakes the subscripted form for a non-instance generic alias.
+            m = intent.pattern.search(text)  # pylint: disable=no-member
             if m:
                 params = {}
                 if intent.extract:
@@ -428,6 +430,8 @@ class AgentExecutor:
 
     def _llm_fallback(self, text: str) -> CommandResult:
         """Use the LLM adapter for queries that don't match patterns."""
+        if self.llm is None:
+            return CommandResult(False, "", speak=self._suggest_help(text))
         try:
             context = f"Available commands: {', '.join(self.commands.keys())}"
             response = self.llm.interpret(text, context)

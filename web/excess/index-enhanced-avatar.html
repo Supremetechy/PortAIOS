@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS — Enhanced Dynamic Interface</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Enhanced styles for new features */
+        .theme-selector-btn {
+            position: fixed;
+            top: 80px;
+            right: 30px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            z-index: 1000;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .theme-selector-btn:hover {
+            background: rgba(0, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .ai-assistant-badge {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            background: rgba(255, 0, 255, 0.1);
+            border: 2px solid #ff00ff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .ai-assistant-badge:hover {
+            background: rgba(255, 0, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .gesture-help-btn {
+            position: fixed;
+            bottom: 170px;
+            right: 30px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .gesture-help-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+            transform: scale(1.1);
+        }
+
+        .feature-badge {
+            background: linear-gradient(135deg, rgba(0, 255, 255, 0.2), rgba(255, 0, 255, 0.2));
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-left: 10px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <!-- Corner brackets -->
+    <div class="corner-bracket cb-tl"></div>
+    <div class="corner-bracket cb-tr"></div>
+    <div class="corner-bracket cb-bl"></div>
+    <div class="corner-bracket cb-br"></div>
+
+    <!-- Background layers -->
+    <div class="bg-layer bg-grid"></div>
+    <div class="bg-layer bg-scan"></div>
+    <div class="bg-layer bg-vignette"></div>
+
+    <!-- Telemetry strip -->
+    <div class="telemetry">
+        <div class="tel-item"><span class="tel-dot"></span> AIOS</div>
+        <div class="tel-item"><span class="tel-dot"></span> ENHANCED UI</div>
+        <div class="tel-item"><span class="tel-dot"></span> AI POWERED</div>
+    </div>
+
+    <!-- Mode indicator -->
+    <div class="mode-badge" id="mode-badge">AVATAR MODE</div>
+
+    <!-- Theme selector button -->
+    <button class="theme-selector-btn" id="theme-selector-btn">
+        🎨 Themes
+    </button>
+
+    <!-- AI Assistant badge -->
+    <div class="ai-assistant-badge" id="ai-assistant-btn" title="AI File Assistant">
+        🤖
+    </div>
+
+    <!-- Gesture help button -->
+    <div class="gesture-help-btn" id="gesture-help-btn" title="Gesture Controls">
+        👆
+    </div>
+
+    <!-- Voice command indicator -->
+    <div class="voice-indicator" id="voice-btn" title="Click to use voice commands">
+        🎤
+    </div>
+
+    <div id="app">
+        <!-- Header -->
+        <header class="boot" style="--d:0.1s">
+            <div class="logo-box">
+                <div class="logo">AIOS</div>
+                <div class="subtitle">Enhanced Dynamic Interface <span class="feature-badge">v2.0</span></div>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-label">STATUS</span>
+                    <span class="status-value" id="system-status">ONLINE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">MODE</span>
+                    <span class="status-value" id="ui-mode">AVATAR</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">THEME</span>
+                    <span class="status-value" id="current-theme">CYAN</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main layout -->
+        <main>
+            <!-- Avatar container -->
+            <div class="avatar-section boot" style="--d:0.25s">
+                <div id="avatar-container" style="position: relative; width: 100%; height: 600px;"></div>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls boot" style="--d:0.4s">
+                <h3>Enhanced Dynamic UI <span class="feature-badge">NEW</span></h3>
+                
+                <div class="control-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
+                    <button class="ui-btn" onclick="window.dynamicUI?.showDesktop()">
+                        📁 Desktop
+                    </button>
+                    <button class="ui-btn" onclick="showSampleDocument()">
+                        📄 Document
+                    </button>
+                    <button class="ui-btn" onclick="showSampleMedia()">
+                        🖼️ Media
+                    </button>
+                    <button class="ui-btn" onclick="window.dynamicUI?.showTerminal()">
+                        💻 Terminal
+                    </button>
+                    <button class="ui-btn" onclick="window.dynamicUI?.showBrowser('https://aios.dev')">
+                        🌐 Browser
+                    </button>
+                    <button class="ui-btn" onclick="window.dynamicUI?.backToAvatar()">
+                        ⚡ Avatar
+                    </button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                    <!-- Voice Commands -->
+                    <div>
+                        <h4 style="color: #00ffff; margin-bottom: 10px;">
+                            🎤 Voice Commands
+                        </h4>
+                        <div style="color: #00ffff; opacity: 0.7; font-size: 0.85em; line-height: 1.6;">
+                            • "Show my files" - Desktop<br>
+                            • "Open terminal" - Terminal<br>
+                            • "Back to avatar" - Return<br>
+                            • "Switch to [color] theme"
+                        </div>
+                    </div>
+
+                    <!-- New Features -->
+                    <div>
+                        <h4 style="color: #00ffff; margin-bottom: 10px;">
+                            ✨ New Features
+                        </h4>
+                        <div style="color: #00ffff; opacity: 0.7; font-size: 0.85em; line-height: 1.6;">
+                            • 8 Visual Themes 🎨<br>
+                            • AI File Analysis 🤖<br>
+                            • Mobile Gestures 👆<br>
+                            • Syntax Highlighting 💻
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Signature -->
+        <div class="signature boot" style="--d:0.55s">
+            <p>Enhanced Neural Interface — AI-Powered • Multi-Theme • Touch-Enabled</p>
+        </div>
+    </div>
+
+    <!-- Eel JavaScript bridge -->
+    <script type="text/javascript" src="/eel.js"></script>
+
+    <!-- Enhanced Avatar System with All Features -->
+    <script type="module">
+        import { BinaryAvatarRenderer } from './binary-avatar.js';
+        import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+        import { FileTypeHandler } from './file-type-handlers.js';
+        import { UIThemeManager, UI_THEMES } from './ui-themes.js';
+        import { MobileGestureHandler } from './mobile-gestures.js';
+
+        console.log('[AIOS Enhanced] Initializing all systems...');
+
+        let avatar = null;
+        let dynamicUI = null;
+        let fileHandler = null;
+        let themeManager = null;
+        let gestureHandler = null;
+        let uptime = 0;
+
+        // Initialize all systems
+        async function init() {
+            const container = document.getElementById('avatar-container');
+            
+            // Create binary avatar
+            avatar = new BinaryAvatarRenderer(container, {
+                palette: 'cyan',
+                particleCount: 8000,
+                showEnvironment: true
+            });
+            avatar.setState('initializing');
+            
+            // Create dynamic UI manager
+            dynamicUI = new DynamicUIManager(container, avatar, {
+                transitionDuration: 800,
+                enableParticleEffects: true
+            });
+
+            // Create file type handler
+            fileHandler = new FileTypeHandler({
+                enableSyntaxHighlighting: true,
+                enableMarkdown: true
+            });
+
+            // Create theme manager
+            themeManager = new UIThemeManager(dynamicUI, avatar);
+
+            // Create mobile gesture handler
+            gestureHandler = new MobileGestureHandler(dynamicUI, {
+                swipeThreshold: 50,
+                doubleTapDelay: 300
+            });
+
+            // Make globally available
+            window.dynamicUI = dynamicUI;
+            window.avatar = avatar;
+            window.fileHandler = fileHandler;
+            window.themeManager = themeManager;
+            window.gestureHandler = gestureHandler;
+
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Set initial state
+            avatar.setState('idle');
+
+            console.log('[AIOS Enhanced] All systems online!');
+            console.log('Features:');
+            console.log('  ✓ Dynamic UI Transformations');
+            console.log('  ✓ 8 Visual Themes');
+            console.log('  ✓ Advanced File Type Support');
+            console.log('  ✓ Mobile Gesture Controls');
+            console.log('  ✓ AI File Operations');
+            
+            // Show mobile gesture help on first load (mobile only)
+            if (gestureHandler.isMobileDevice()) {
+                const shown = localStorage.getItem('gesture-help-shown');
+                if (!shown) {
+                    setTimeout(() => {
+                        gestureHandler.showGestureHelp();
+                        localStorage.setItem('gesture-help-shown', 'true');
+                    }, 2000);
+                }
+            }
+        }
+
+        function setupEventListeners() {
+            // Mode change events
+            window.addEventListener('dynamicui:modeChanged', (e) => {
+                const { from, to } = e.detail;
+                console.log(`[Mode] ${from} → ${to}`);
+                updateModeIndicator(to);
+                
+                if (to === 'avatar') {
+                    avatar.setState('idle');
+                } else {
+                    avatar.setState('background');
+                }
+            });
+
+            // Theme change events
+            window.addEventListener('theme:themeChanged', (e) => {
+                const { theme, config } = e.detail;
+                console.log(`[Theme] Applied: ${config.name}`);
+                document.getElementById('current-theme').textContent = config.name.toUpperCase();
+            });
+
+            // File click events
+            window.addEventListener('dynamicui:fileClicked', async (e) => {
+                const file = e.detail;
+                console.log('[File] Clicked:', file);
+                
+                // Use file handler to render content
+                if (file.content) {
+                    const viewer = document.getElementById('document-viewer');
+                    if (viewer) {
+                        await fileHandler.renderFile(file.name, file.content, viewer);
+                    }
+                }
+            });
+
+            // Theme selector button
+            document.getElementById('theme-selector-btn').addEventListener('click', () => {
+                showThemeSelector();
+            });
+
+            // AI assistant button
+            document.getElementById('ai-assistant-btn').addEventListener('click', () => {
+                showAIAssistant();
+            });
+
+            // Gesture help button
+            document.getElementById('gesture-help-btn').addEventListener('click', () => {
+                gestureHandler.showGestureHelp();
+            });
+        }
+
+        function updateModeIndicator(mode) {
+            const badge = document.getElementById('mode-badge');
+            const statusValue = document.getElementById('ui-mode');
+            const modeText = mode.toUpperCase() + ' MODE';
+            
+            if (badge) badge.textContent = modeText;
+            if (statusValue) statusValue.textContent = mode.toUpperCase();
+        }
+
+        function showThemeSelector() {
+            // Create theme selector overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            `;
+
+            const container = document.createElement('div');
+            container.style.cssText = 'max-width: 600px; width: 100%;';
+            
+            const selector = themeManager.createThemeSelector(container);
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕ Close';
+            closeBtn.style.cssText = `
+                margin-top: 30px;
+                padding: 12px 30px;
+                background: var(--theme-gradient);
+                border: 2px solid var(--theme-primary);
+                color: var(--theme-primary);
+                font-family: 'Courier New', monospace;
+                cursor: pointer;
+                border-radius: 8px;
+                font-size: 1em;
+            `;
+            closeBtn.onclick = () => overlay.remove();
+            
+            container.appendChild(closeBtn);
+            overlay.appendChild(container);
+            document.body.appendChild(overlay);
+        }
+
+        function showAIAssistant() {
+            alert('AI Assistant\n\nAI-powered features:\n• File analysis\n• Smart search\n• Organization suggestions\n• File summaries\n\nConnect backend to enable!');
+        }
+
+        // Sample functions
+        window.showSampleDocument = async function() {
+            const sampleContent = `# AIOS Enhanced Dynamic UI
+
+## New Features
+
+### 1. Advanced File Type Handlers
+- **Syntax highlighting** for 20+ languages
+- **Markdown rendering** with full formatting
+- **CSV tables** with interactive display
+- **JSON formatting** and validation
+- **Image controls** (zoom, rotate)
+- **Video player** with custom controls
+
+### 2. Visual Themes
+Choose from 8 stunning themes:
+- **Cyan Matrix** (default)
+- **Purple Neon**
+- **Green Terminal**
+- **Matrix Code**
+- **Amber Retro**
+- **Red Alert**
+- **Blue Ice**
+- **Dark Mode**
+
+### 3. Mobile Gestures
+Touch-enabled controls:
+- Swipe right → Back to avatar
+- Swipe left → Next mode
+- Swipe up → Open files
+- Swipe down → Close view
+- Double tap → Toggle terminal
+- Pinch → Zoom in/out
+
+### 4. AI File Operations
+Intelligent file management:
+- Analyze file content
+- Smart semantic search
+- Organization suggestions
+- Multi-file summaries
+- Suggested actions
+
+### Code Example
+\`\`\`javascript
+const dynamicUI = new DynamicUIManager(container, avatar);
+await dynamicUI.showDesktop(files, '/home');
+\`\`\`
+
+## Get Started
+
+Try these voice commands:
+- "Show my files"
+- "Open terminal"
+- "Switch to purple theme"
+- "Back to avatar"
+
+Or use the buttons and gestures!
+`;
+            
+            await dynamicUI.showDocument('AIOS Enhanced Features', fileHandler._parseMarkdown(sampleContent));
+        };
+
+        window.showSampleMedia = async function() {
+            await dynamicUI.showMedia('image', 'AIOSAvatarImg.png', 'AIOS Enhanced Avatar');
+        };
+
+        // Voice command handling (enhanced)
+        const voiceBtn = document.getElementById('voice-btn');
+        let recognition = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                voiceBtn.classList.add('active');
+                console.log('[Voice] Listening...');
+            };
+
+            recognition.onend = () => {
+                voiceBtn.classList.remove('active');
+            };
+
+            recognition.onresult = async (event) => {
+                const text = event.results[0][0].transcript;
+                console.log('[Voice] Command:', text);
+                
+                // Check for theme changes
+                if (text.toLowerCase().includes('theme')) {
+                    const themes = Object.keys(UI_THEMES);
+                    for (const theme of themes) {
+                        if (text.toLowerCase().includes(theme)) {
+                            themeManager.applyTheme(theme);
+                            return;
+                        }
+                    }
+                }
+                
+                // Process UI commands
+                if (typeof eel !== 'undefined') {
+                    try {
+                        const result = await eel.process_ui_voice_command(text)();
+                        if (result && result.action === 'switch_mode') {
+                            await handleModeSwitch(result.mode, result.data);
+                        }
+                    } catch (err) {
+                        processVoiceCommandLocally(text);
+                    }
+                } else {
+                    processVoiceCommandLocally(text);
+                }
+            };
+
+            voiceBtn.addEventListener('click', () => {
+                recognition.start();
+            });
+        } else {
+            voiceBtn.style.display = 'none';
+        }
+
+        function processVoiceCommandLocally(text) {
+            const lower = text.toLowerCase();
+            
+            if (lower.includes('files') || lower.includes('desktop')) {
+                dynamicUI.showDesktop(getSampleFiles(), '/home');
+            } else if (lower.includes('terminal')) {
+                dynamicUI.showTerminal();
+            } else if (lower.includes('back') || lower.includes('avatar')) {
+                dynamicUI.backToAvatar();
+            }
+        }
+
+        async function handleModeSwitch(mode, data) {
+            switch (mode) {
+                case 'desktop':
+                    dynamicUI.showDesktop(data.files || getSampleFiles(), data.path || '/home');
+                    break;
+                case 'document':
+                    showSampleDocument();
+                    break;
+                case 'media':
+                    dynamicUI.showMedia(data.type, data.url, data.title);
+                    break;
+                case 'terminal':
+                    dynamicUI.showTerminal(data.message);
+                    break;
+                case 'browser':
+                    dynamicUI.showBrowser(data.url, data.content);
+                    break;
+                case 'avatar':
+                    dynamicUI.backToAvatar();
+                    break;
+            }
+        }
+
+        function getSampleFiles() {
+            return [
+                { name: 'Documents', type: 'folder', size: '' },
+                { name: 'Projects', type: 'folder', size: '' },
+                { name: 'readme.md', type: 'markdown', size: '2.4 KB' },
+                { name: 'data.csv', type: 'data', size: '15.8 KB' },
+                { name: 'config.json', type: 'data', size: '1.2 KB' },
+                { name: 'main.py', type: 'code', size: '8.1 KB' },
+                { name: 'avatar.png', type: 'image', size: '256 KB', url: 'AIOSAvatarImg.png' },
+            ];
+        }
+
+        // Uptime counter
+        setInterval(() => {
+            uptime++;
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            const seconds = uptime % 60;
+            const uptimeEl = document.getElementById('uptime');
+            if (uptimeEl) {
+                uptimeEl.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

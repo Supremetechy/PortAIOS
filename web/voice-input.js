@@ -7,20 +7,32 @@
 class VoiceInputController {
   constructor(options = {}) {
     this.options = {
-      wakeWords: options.wakeWords || ['hey aios', 'aios', 'computer'],
+      wakeWords: options.wakeWords || options.wakeWord ? [options.wakeWord] : ['hey aios', 'aios', 'computer'],
+      customWakeWords: options.customWakeWords || [],
       continuous: options.continuous !== false,
+      conversationMode: options.conversationMode || false,
+      conversationTimeout: options.conversationTimeout || 8000, // 8 seconds between utterances
       language: options.language || 'en-US',
       interimResults: options.interimResults !== false,
       maxAlternatives: options.maxAlternatives || 1,
       autoStart: options.autoStart || false,
+      autoSleep: options.autoSleep !== false,
+      sleepTimeout: options.sleepTimeout || 30000,
       ...options
     };
+
+    // Merge custom wake words with defaults
+    if (this.options.customWakeWords.length > 0) {
+      this.options.wakeWords = [...new Set([...this.options.wakeWords, ...this.options.customWakeWords])];
+    }
 
     // State
     this.isListening = false;
     this.isAwake = false;
+    this.inConversation = false;
     this.currentTranscript = '';
     this.finalTranscript = '';
+    this.lastCommandTime = null;
     
     // Recognition instance
     this.recognition = null;
@@ -29,9 +41,12 @@ class VoiceInputController {
     // Callbacks
     this.onTranscript = options.onTranscript || (() => {});
     this.onCommand = options.onCommand || (() => {});
-    this.onWakeWord = options.onWakeWord || (() => {});
+    this.onWakeWord = options.onWakeWord || options.onWake || (() => {});
+    this.onSleep = options.onSleep || (() => {});
     this.onError = options.onError || ((error) => console.error('[Voice]', error));
     this.onStateChange = options.onStateChange || (() => {});
+    this.onConversationStart = options.onConversationStart || (() => {});
+    this.onConversationEnd = options.onConversationEnd || (() => {});
 
     // Avatar reference (will be set externally)
     this.avatar = null;
@@ -109,18 +124,19 @@ class VoiceInputController {
 
     // Errors
     this.recognition.onerror = (event) => {
-      console.error('[Voice] Recognition error:', event.error);
-      
-      // Handle specific errors
+      // Handle harmless errors first (don't log as errors)
       if (event.error === 'no-speech') {
         console.log('[Voice] No speech detected, continuing...');
         return;
       }
       
       if (event.error === 'aborted') {
-        console.log('[Voice] Recognition aborted');
+        console.log('[Voice] Recognition stopped');
         return;
       }
+      
+      // Now log actual errors
+      console.error('[Voice] Recognition error:', event.error);
 
       this.onError({
         type: event.error,
@@ -228,19 +244,69 @@ class VoiceInputController {
   processCommand(command) {
     console.log('[Voice] Processing command:', command);
     
+    // Update last command time
+    this.lastCommandTime = Date.now();
+    
+    // Enter conversation mode if enabled
+    if (this.options.conversationMode && !this.inConversation) {
+      this.startConversation();
+    } else if (this.inConversation) {
+      // Reset conversation timeout
+      this.resetConversationTimer();
+    }
+    
     // Update avatar to show processing
     this.updateAvatarState('thinking');
 
     // Notify command handler
     this.onCommand({
       command: command,
-      timestamp: Date.now()
+      timestamp: this.lastCommandTime,
+      inConversation: this.inConversation
     });
 
     // Reset after processing
     setTimeout(() => {
       this.updateAvatarState('listening');
     }, 500);
+    
+    // Reset sleep timer since we got a command
+    if (this.options.autoSleep) {
+      this.resetSleepTimer();
+    }
+  }
+
+  startConversation() {
+    if (this.inConversation) return;
+    
+    console.log('[Voice] Conversation mode started');
+    this.inConversation = true;
+    this.onConversationStart();
+    this.resetConversationTimer();
+  }
+
+  endConversation() {
+    if (!this.inConversation) return;
+    
+    console.log('[Voice] Conversation mode ended');
+    this.inConversation = false;
+    this.onConversationEnd();
+    
+    if (this.conversationTimer) {
+      clearTimeout(this.conversationTimer);
+      this.conversationTimer = null;
+    }
+  }
+
+  resetConversationTimer() {
+    if (this.conversationTimer) {
+      clearTimeout(this.conversationTimer);
+    }
+
+    // End conversation after timeout
+    this.conversationTimer = setTimeout(() => {
+      this.endConversation();
+    }, this.options.conversationTimeout);
   }
 
   wake() {
@@ -266,21 +332,31 @@ class VoiceInputController {
     this.updateState('sleeping');
     this.updateAvatarState('idle');
     
+    // End any active conversation
+    if (this.inConversation) {
+      this.endConversation();
+    }
+    
     if (this.sleepTimer) {
       clearTimeout(this.sleepTimer);
       this.sleepTimer = null;
     }
+    
+    // Notify sleep callback
+    this.onSleep();
   }
 
   resetSleepTimer() {
+    if (!this.options.autoSleep) return;
+    
     if (this.sleepTimer) {
       clearTimeout(this.sleepTimer);
     }
 
-    // Auto-sleep after 30 seconds
+    // Auto-sleep after configured timeout
     this.sleepTimer = setTimeout(() => {
       this.sleep();
-    }, 30000);
+    }, this.options.sleepTimeout);
   }
 
   start() {
@@ -398,6 +474,10 @@ class VoiceInputController {
     if (this.sleepTimer) {
       clearTimeout(this.sleepTimer);
     }
+    
+    if (this.conversationTimer) {
+      clearTimeout(this.conversationTimer);
+    }
 
     if (this.recognition) {
       this.stop();
@@ -405,6 +485,51 @@ class VoiceInputController {
     }
 
     this.avatar = null;
+  }
+
+  // Configuration methods
+  setWakeWords(wakeWords) {
+    console.log('[Voice] Updating wake words:', wakeWords);
+    this.options.wakeWords = Array.isArray(wakeWords) ? wakeWords : [wakeWords];
+  }
+
+  addWakeWord(wakeWord) {
+    if (!this.options.wakeWords.includes(wakeWord)) {
+      console.log('[Voice] Adding wake word:', wakeWord);
+      this.options.wakeWords.push(wakeWord);
+    }
+  }
+
+  removeWakeWord(wakeWord) {
+    const index = this.options.wakeWords.indexOf(wakeWord);
+    if (index > -1) {
+      console.log('[Voice] Removing wake word:', wakeWord);
+      this.options.wakeWords.splice(index, 1);
+    }
+  }
+
+  getWakeWords() {
+    return [...this.options.wakeWords];
+  }
+
+  setConversationMode(enabled) {
+    console.log('[Voice] Conversation mode:', enabled ? 'enabled' : 'disabled');
+    this.options.conversationMode = enabled;
+    if (!enabled && this.inConversation) {
+      this.endConversation();
+    }
+  }
+
+  getConfig() {
+    return {
+      wakeWords: this.getWakeWords(),
+      conversationMode: this.options.conversationMode,
+      conversationTimeout: this.options.conversationTimeout,
+      autoSleep: this.options.autoSleep,
+      sleepTimeout: this.options.sleepTimeout,
+      continuous: this.options.continuous,
+      language: this.options.language
+    };
   }
 }
 

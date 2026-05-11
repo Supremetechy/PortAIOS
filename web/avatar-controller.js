@@ -81,7 +81,17 @@ class AvatarController {
   }
 
   initAudioContext() {
-    document.addEventListener('click', () => {
+    // Tracks whether the page has received a user activation gesture. Chrome's
+    // autoplay policy blocks both AudioContext.resume() and the first call to
+    // speechSynthesis.speak() until this is true; speak() reports the failure
+    // as `event.error === 'not-allowed'`, which is easy to misread as a
+    // microphone-permissions problem (it isn't).
+    this.userActivated = false;
+    this._pendingSpeechQueue = [];
+
+    const onFirstGesture = () => {
+      this.userActivated = true;
+
       if (!this.audioContext) {
         try {
           this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -93,7 +103,31 @@ class AvatarController {
           console.error('[Avatar] Failed to create audio context:', error);
         }
       }
-    }, { once: true });
+
+      // Prime the SpeechSynthesis engine with a zero-volume empty utterance.
+      // This satisfies Chrome's autoplay gate so subsequent speak() calls work
+      // without firing 'not-allowed'.
+      if (window.speechSynthesis) {
+        try {
+          const primer = new SpeechSynthesisUtterance(' ');
+          primer.volume = 0;
+          primer.rate = 10;
+          window.speechSynthesis.speak(primer);
+        } catch (e) {
+          console.warn('[Avatar] TTS primer failed:', e);
+        }
+      }
+
+      // Drain anything that was deferred while we waited for the gesture.
+      const queued = this._pendingSpeechQueue.splice(0);
+      for (const text of queued) {
+        this.speakViaWebSpeech(text).catch(() => {});
+      }
+    };
+
+    document.addEventListener('click', onFirstGesture, { once: true });
+    document.addEventListener('keydown', onFirstGesture, { once: true });
+    document.addEventListener('touchstart', onFirstGesture, { once: true });
   }
 
   async preloadVoices() {
@@ -109,24 +143,46 @@ class AvatarController {
         
         if (voices.length > 0) {
           this.voicesLoaded = true;
+          this.availableVoices = voices;
           
-          // Select best voice based on browser
+          // Categorize voices by language and quality
+          this.voiceCategories = {
+            'en-US': voices.filter(v => v.lang === 'en-US'),
+            'en-GB': voices.filter(v => v.lang === 'en-GB'),
+            'en-AU': voices.filter(v => v.lang === 'en-AU'),
+            'es-ES': voices.filter(v => v.lang.startsWith('es')),
+            'fr-FR': voices.filter(v => v.lang.startsWith('fr')),
+            'de-DE': voices.filter(v => v.lang.startsWith('de')),
+            'ja-JP': voices.filter(v => v.lang.startsWith('ja')),
+            'zh-CN': voices.filter(v => v.lang.startsWith('zh')),
+            'other': voices.filter(v => !v.lang.match(/^(en|es|fr|de|ja|zh)/))
+          };
+          
+          // Select best voice based on browser with enhanced selection
           if (this.browser === 'safari') {
-            // Safari: Prefer Samantha or Alex
+            // Safari: Prefer premium voices (Samantha, Alex, Victoria)
             this.selectedVoice = voices.find(v => 
-              v.name.includes('Samantha') || v.name.includes('Alex')
-            ) || voices.find(v => v.lang.startsWith('en'));
+              v.name.includes('Samantha') || v.name.includes('Alex') || v.name.includes('Victoria')
+            ) || voices.find(v => v.lang.startsWith('en') && v.localService);
           } else if (this.browser === 'firefox') {
-            // Firefox: Use default voice
-            this.selectedVoice = voices.find(v => v.default) || voices[0];
+            // Firefox: Use default voice or look for quality voices
+            this.selectedVoice = voices.find(v => v.default) || 
+                                voices.find(v => v.lang === 'en-US' && v.localService) || 
+                                voices[0];
           } else {
-            // Chrome/Edge: Prefer Google voices
+            // Chrome/Edge: Prefer Google voices, then Microsoft Natural voices
             this.selectedVoice = voices.find(v => 
-              v.name.includes('Google')
+              v.name.includes('Google US English') || v.name.includes('Google UK English')
+            ) || voices.find(v => 
+              v.name.includes('Microsoft') && v.name.includes('Natural')
             ) || voices.find(v => v.lang.startsWith('en'));
           }
           
           console.log('[Avatar] Voice selected:', this.selectedVoice?.name || 'default');
+          console.log(`[Avatar] ${voices.length} voices available in ${Object.keys(this.voiceCategories).length} languages`);
+          
+          // Populate voice selector UI if it exists
+          this.populateVoiceSelector();
           resolve();
         } else {
           // Voices not loaded yet, wait for event
@@ -139,18 +195,21 @@ class AvatarController {
             // Timeout for browsers that don't fire voiceschanged
             setTimeout(() => {
               if (!this.voicesLoaded) {
-                console.warn('[Avatar] Voice loading timeout, using default');
+                console.log('[Avatar] Voice loading timeout - proceeding with system default voice');
                 this.voicesLoaded = true;
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                  this.availableVoices = voices;
+                  this.selectedVoice = voices[0];
+                  console.log('[Avatar] Fallback voice selected:', this.selectedVoice?.name || 'default');
+                }
                 resolve();
               }
-            }, 1000);
+            }, 3000);
           }
         }
       };
 
-      // Chrome: Voices available immediately
-      // Safari: Need to wait for voiceschanged
-      // Firefox: Available immediately
       loadVoices();
       
       // Safari-specific: Force trigger
@@ -158,6 +217,69 @@ class AvatarController {
         window.speechSynthesis.getVoices();
       }
     });
+  }
+
+  populateVoiceSelector() {
+    const selector = document.getElementById('voice-select');
+    if (!selector || !this.availableVoices) return;
+
+    // Clear existing options
+    selector.innerHTML = '';
+
+    // Group voices by language
+    const languageGroups = {
+      'English (US)': this.voiceCategories['en-US'] || [],
+      'English (UK)': this.voiceCategories['en-GB'] || [],
+      'English (AU)': this.voiceCategories['en-AU'] || [],
+      'Spanish': this.voiceCategories['es-ES'] || [],
+      'French': this.voiceCategories['fr-FR'] || [],
+      'German': this.voiceCategories['de-DE'] || [],
+      'Japanese': this.voiceCategories['ja-JP'] || [],
+      'Chinese': this.voiceCategories['zh-CN'] || [],
+      'Other Languages': this.voiceCategories['other'] || []
+    };
+
+    for (const [label, voices] of Object.entries(languageGroups)) {
+      if (voices.length === 0) continue;
+
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = label;
+
+      voices.forEach(voice => {
+        const option = document.createElement('option');
+        option.value = voice.name;
+        option.textContent = `${voice.name} ${voice.localService ? '📱' : '☁️'}`;
+        if (voice === this.selectedVoice) {
+          option.selected = true;
+        }
+        optgroup.appendChild(option);
+      });
+
+      selector.appendChild(optgroup);
+    }
+
+    // Add change listener
+    selector.addEventListener('change', (e) => {
+      const voiceName = e.target.value;
+      this.selectedVoice = this.availableVoices.find(v => v.name === voiceName);
+      console.log('[Avatar] Voice changed to:', this.selectedVoice?.name);
+      this.updateTTSIndicator('browser');
+    });
+  }
+
+  setVoice(voiceName) {
+    if (!this.availableVoices) return false;
+    const voice = this.availableVoices.find(v => v.name === voiceName);
+    if (voice) {
+      this.selectedVoice = voice;
+      console.log('[Avatar] Voice manually set to:', voice.name);
+      return true;
+    }
+    return false;
+  }
+
+  getAvailableVoices() {
+    return this.voiceCategories || {};
   }
 
   connectWebSocket() {
@@ -285,56 +407,87 @@ class AvatarController {
       if (this.browser === 'firefox' || this.browser === 'safari') {
         await this.speakViaWebSpeech(text);
       } else if (this.ws && this.ws.readyState === WebSocket.OPEN && !this.usingFallback) {
-        await this.speakViaBackend(text, emotion);
+        // Try backend first, but fallback to Web Speech if it fails
+        try {
+          await this.speakViaBackend(text, emotion);
+        } catch (backendError) {
+          console.log('[Avatar] Backend TTS failed, using Web Speech API fallback');
+          await this.speakViaWebSpeech(text);
+        }
       } else {
         await this.speakViaWebSpeech(text);
       }
     } catch (error) {
-      console.error('[Avatar] Speech error:', error);
-      // Try fallback
-      try {
-        await this.speakViaWebSpeech(text);
-      } catch (fallbackError) {
-        console.error('[Avatar] Fallback speech also failed:', fallbackError);
-      }
+      console.warn('[Avatar] Speech error:', error.message || error);
+      // Continue processing queue even if speech fails
     }
 
     await this.processSpeechQueue();
   }
 
   async speakViaBackend(text, emotion) {
+    this.updateTTSIndicator('backend');
     return new Promise((resolve, reject) => {
-      this.ws.send(JSON.stringify({
-        type: 'tts_request',
-        text: text,
-        emotion: emotion
-      }));
+      // Shorter timeout for faster fallback
+      const timeout = setTimeout(() => {
+        this.ws.removeEventListener('message', completionHandler);
+        console.log('[Avatar] Backend TTS timeout after 10s, will fallback to Web Speech');
+        reject(new Error('Backend TTS timeout'));
+      }, 10000);
 
       const completionHandler = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === 'tts_complete') {
-          this.ws.removeEventListener('message', completionHandler);
-          resolve();
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'tts_complete') {
+            clearTimeout(timeout);
+            this.ws.removeEventListener('message', completionHandler);
+            resolve();
+          }
+        } catch (e) {
+          // Ignore malformed messages
         }
       };
 
       this.ws.addEventListener('message', completionHandler);
 
-      setTimeout(() => {
+      try {
+        this.ws.send(JSON.stringify({
+          type: 'tts_request',
+          text: text,
+          emotion: emotion
+        }));
+      } catch (sendError) {
+        clearTimeout(timeout);
         this.ws.removeEventListener('message', completionHandler);
-        reject(new Error('TTS timeout'));
-      }, 30000);
+        reject(new Error('Failed to send TTS request'));
+      }
     });
   }
 
   async speakViaWebSpeech(text) {
     if (!window.speechSynthesis) {
-      throw new Error('Speech synthesis not supported');
+      console.warn('[Avatar] Speech synthesis not supported');
+      return;
     }
+
+    // Chrome / Safari refuse the very first speak() call until the page has
+    // received a user activation gesture (click/keydown/touch). Defer this
+    // utterance until that happens; initAudioContext() will replay the queue.
+    if (!this.userActivated) {
+      console.log('[Avatar] Deferring TTS until first user gesture (autoplay policy)');
+      this._pendingSpeechQueue.push(text);
+      return;
+    }
+
+    this.updateTTSIndicator('browser');
 
     return new Promise((resolve, reject) => {
       // CRITICAL FIX: Cancel any ongoing speech first
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch(e) {
+        console.warn('[Avatar] Error canceling speech:', e);
+      }
       
       // Wait a tick for cancellation to process (especially important for Safari)
       setTimeout(() => {
@@ -384,14 +537,38 @@ class AvatarController {
         };
 
         utterance.onerror = (event) => {
+          if (hasEnded) return; // Already handled
+          hasEnded = true;
           this.stopSpeechVolumeSimulation();
 
-          // 'interrupted' and 'canceled' fire when a new utterance preempts this one — not real failures
-          if (event.error === 'interrupted' || event.error === 'canceled') {
+          // Common non-critical errors that should not break the flow
+          const nonCriticalErrors = ['interrupted', 'canceled', 'network', 'synthesis-failed', 'synthesis-unavailable'];
+          
+          if (nonCriticalErrors.includes(event.error)) {
+            console.log('[Avatar] Speech error (non-critical):', event.error);
+            resolve(); // Resolve instead of reject for graceful degradation
+          } else if (event.error === 'not-allowed') {
+            // NB: this is the SpeechSynthesisUtterance API (TTS / output),
+            // not microphone access. 'not-allowed' here means the browser
+            // refused to play synthesized audio. The most common causes are:
+            //   1. No user activation yet (autoplay policy) — handled by the
+            //      gesture-priming in initAudioContext(). If we still hit it
+            //      after a click, the priming didn't take.
+            //   2. The TTS engine is disabled in chrome://settings.
+            //   3. The selected voice is a remote/Google voice and the page
+            //      origin is `file://` (Chrome blocks remote TTS there).
+            // Resolve so the agent loop continues; falling back to the
+            // backend Piper bridge or a local voice is the user's recourse.
+            console.warn(
+              '[Avatar] TTS rejected as "not-allowed". This is the speech-synthesis ' +
+              '(output) API, NOT microphone access. Likely causes: autoplay policy ' +
+              '(needs a click before the first speak()), TTS engine disabled in ' +
+              'browser settings, or remote voice blocked on file:// origins.'
+            );
             resolve();
           } else {
-            console.error('[Avatar] Speech error:', event);
-            reject(event);
+            console.warn('[Avatar] Speech error:', event.error, '- continuing anyway');
+            resolve(); // Always resolve to prevent blocking
           }
         };
 
@@ -599,6 +776,38 @@ class AvatarController {
       bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes.buffer;
+  }
+
+  updateTTSIndicator(method) {
+    // Update visual indicator for TTS method
+    const indicator = document.getElementById('tts-indicator');
+    if (!indicator) return;
+
+    const methodInfo = {
+      'backend': {
+        text: '🔊 Backend TTS',
+        color: '#00ff00',
+        tooltip: 'Using Piper neural TTS backend'
+      },
+      'browser': {
+        text: '🔊 Browser TTS',
+        color: '#00ccff',
+        tooltip: `Using ${this.selectedVoice?.name || 'system'} voice`
+      }
+    };
+
+    const info = methodInfo[method];
+    if (info) {
+      indicator.textContent = info.text;
+      indicator.style.color = info.color;
+      indicator.title = info.tooltip;
+      indicator.style.animation = 'pulse-glow 0.3s ease-in-out';
+      
+      // Dispatch custom event for other UI components
+      window.dispatchEvent(new CustomEvent('avatar:ttsMethodChanged', {
+        detail: { method, voice: this.selectedVoice?.name }
+      }));
+    }
   }
 
   destroy() {
