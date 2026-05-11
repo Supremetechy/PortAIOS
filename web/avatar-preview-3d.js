@@ -3,9 +3,10 @@
  * Real-time Three.js preview for avatar customization
  */
 
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/loaders/GLTFLoader.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
+// Use unpkg CDN with proper module resolution
+import * as THREE from 'https://unpkg.com/three@0.157.0/build/three.module.js';
+import { GLTFLoader } from 'https://unpkg.com/three@0.157.0/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'https://unpkg.com/three@0.157.0/examples/jsm/controls/OrbitControls.js';
 
 export class AvatarPreview3D {
     constructor(containerElement) {

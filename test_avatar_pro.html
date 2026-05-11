@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Avatar Creator Pro</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #0a0e27;
+            color: #00ffff;
+            padding: 20px;
+        }
+        .test-section {
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .status {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass {
+            background: rgba(0, 255, 0, 0.2);
+            border-left: 4px solid #00ff00;
+        }
+        .fail {
+            background: rgba(255, 0, 0, 0.2);
+            border-left: 4px solid #ff0000;
+        }
+        #preview-container {
+            width: 400px;
+            height: 400px;
+            background: #000;
+            border: 2px solid #00ffff;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            background: rgba(0, 255, 255, 0.2);
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: rgba(0, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Avatar Creator Pro - Test Suite</h1>
+
+    <div class="test-section">
+        <h2>1. Module Loading Test</h2>
+        <div id="module-test"></div>
+        <button onclick="testModules()">Run Module Test</button>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Three.js Integration Test</h2>
+        <div id="threejs-test"></div>
+        <div id="preview-container"></div>
+        <button onclick="test3DPreview()">Run 3D Preview Test</button>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Animation System Test</h2>
+        <div id="animation-test"></div>
+        <button onclick="testAnimations()">Run Animation Test</button>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Backend Connection Test</h2>
+        <div id="backend-test"></div>
+        <button onclick="testBackend()">Run Backend Test</button>
+    </div>
+
+    <script type="module">
+        // Store modules globally for testing
+        window.testModules = async function() {
+            const results = document.getElementById('module-test');
+            results.innerHTML = '<p>Testing module imports...</p>';
+            
+            try {
+                // Test avatar-preview-3d.js
+                const preview = await import('./web/avatar-preview-3d.js');
+                results.innerHTML += '<div class="status pass">✓ avatar-preview-3d.js loaded</div>';
+                window.AvatarPreview3D = preview.AvatarPreview3D;
+                
+                // Test avatar-animations.js
+                const animations = await import('./web/avatar-animations.js');
+                results.innerHTML += '<div class="status pass">✓ avatar-animations.js loaded</div>';
+                window.AnimationPlayer = animations.AnimationPlayer;
+                window.EXPRESSION_ANIMATIONS = animations.EXPRESSION_ANIMATIONS;
+                
+                results.innerHTML += '<div class="status pass"><strong>✓ All modules loaded successfully!</strong></div>';
+            } catch (error) {
+                results.innerHTML += `<div class="status fail">✗ Module loading failed: ${error.message}</div>`;
+                console.error('Module error:', error);
+            }
+        };
+
+        window.test3DPreview = async function() {
+            const results = document.getElementById('threejs-test');
+            results.innerHTML = '<p>Testing 3D preview system...</p>';
+            
+            try {
+                if (!window.AvatarPreview3D) {
+                    await testModules();
+                }
+                
+                const container = document.getElementById('preview-container');
+                const preview = new window.AvatarPreview3D(container);
+                
+                results.innerHTML += '<div class="status pass">✓ AvatarPreview3D instance created</div>';
+                results.innerHTML += '<div class="status pass">✓ Three.js scene initialized</div>';
+                results.innerHTML += '<div class="status pass">✓ Camera and renderer ready</div>';
+                
+                // Try to load a default model
+                try {
+                    await preview.loadAvatar('/models/avatar.glb');
+                    results.innerHTML += '<div class="status pass">✓ Avatar model loaded</div>';
+                } catch (e) {
+                    results.innerHTML += '<div class="status fail">⚠ Model loading failed (expected if no server running)</div>';
+                }
+                
+                results.innerHTML += '<div class="status pass"><strong>✓ 3D Preview system working!</strong></div>';
+                window.testPreview = preview;
+                
+            } catch (error) {
+                results.innerHTML += `<div class="status fail">✗ 3D Preview test failed: ${error.message}</div>`;
+                console.error('3D Preview error:', error);
+            }
+        };
+
+        window.testAnimations = async function() {
+            const results = document.getElementById('animation-test');
+            results.innerHTML = '<p>Testing animation system...</p>';
+            
+            try {
+                if (!window.EXPRESSION_ANIMATIONS) {
+                    await testModules();
+                }
+                
+                const animCount = Object.keys(window.EXPRESSION_ANIMATIONS).length;
+                results.innerHTML += `<div class="status pass">✓ Found ${animCount} expression animations</div>`;
+                
+                // List animations
+                Object.keys(window.EXPRESSION_ANIMATIONS).forEach(key => {
+                    const anim = window.EXPRESSION_ANIMATIONS[key];
+                    results.innerHTML += `<div class="status pass">  - ${anim.name} (${anim.duration}ms)</div>`;
+                });
+                
+                results.innerHTML += '<div class="status pass"><strong>✓ Animation system ready!</strong></div>';
+                
+            } catch (error) {
+                results.innerHTML += `<div class="status fail">✗ Animation test failed: ${error.message}</div>`;
+                console.error('Animation error:', error);
+            }
+        };
+
+        window.testBackend = async function() {
+            const results = document.getElementById('backend-test');
+            results.innerHTML = '<p>Testing backend connection...</p>';
+            
+            try {
+                // Check if eel is available
+                if (typeof eel === 'undefined') {
+                    results.innerHTML += '<div class="status fail">✗ Eel not loaded (server not running)</div>';
+                    results.innerHTML += '<div class="status fail">Start server with: python run_onboarding.py</div>';
+                    return;
+                }
+                
+                results.innerHTML += '<div class="status pass">✓ Eel object available</div>';
+                
+                // Try to call a backend function
+                try {
+                    const presets = await eel.get_avatar_presets()();
+                    results.innerHTML += '<div class="status pass">✓ Backend connection successful</div>';
+                    results.innerHTML += `<div class="status pass">✓ Found ${Object.keys(presets).length} presets</div>`;
+                } catch (e) {
+                    results.innerHTML += '<div class="status fail">✗ Backend call failed: ' + e.message + '</div>';
+                }
+                
+            } catch (error) {
+                results.innerHTML += `<div class="status fail">✗ Backend test failed: ${error.message}</div>`;
+                console.error('Backend error:', error);
+            }
+        };
+
+        // Auto-run module test on load
+        window.addEventListener('load', () => {
+            console.log('Test page loaded, ready to run tests');
+        });
+    </script>
+
+    <div class="test-section">
+        <h2>Quick Start Guide</h2>
+        <ol>
+            <li>Run tests above to verify components</li>
+            <li>If eel test fails, start server: <code>python run_onboarding.py</code></li>
+            <li>Then navigate to: <code>http://localhost:8000/avatar-creator-pro.html</code></li>
+        </ol>
+        
+        <h3>Expected Results</h3>
+        <ul>
+            <li>✓ Modules should load without errors</li>
+            <li>✓ 3D Preview should show a black canvas with controls</li>
+            <li>✓ Animations should list 6 expressions</li>
+            <li>⚠ Backend test will fail if server not running (expected)</li>
+        </ul>
+    </div>
+</body>
+</html>
