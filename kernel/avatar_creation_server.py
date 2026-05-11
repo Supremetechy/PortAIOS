@@ -18,8 +18,10 @@ except ImportError:
     logging.warning("Eel not available - avatar creation server will not function")
 
 from kernel.avatar_generator import generate_avatar, AvatarParams
+from kernel.avatar_storage import get_avatar_storage
 
 logger = logging.getLogger("AIOS.AvatarCreationServer")
+storage = get_avatar_storage()
 
 # Global state for tracking avatar generation progress
 _generation_state = {
@@ -177,6 +179,78 @@ if EEL_AVAILABLE:
     
     
     @eel.expose
+    def save_custom_avatar(name: str, params: Dict[str, Any], 
+                          tags: Optional[list] = None) -> Dict[str, Any]:
+        """Save a custom avatar configuration"""
+        try:
+            # Get the last generated avatar path
+            glb_path = None
+            with _generation_lock:
+                glb_path = _generation_state.get("result_path")
+            
+            result = storage.save_avatar(name, params, glb_path, tags)
+            return result
+        except Exception as e:
+            logger.error(f"Failed to save avatar: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
+    def load_custom_avatar(avatar_id: str) -> Dict[str, Any]:
+        """Load a saved avatar configuration"""
+        try:
+            avatar_data = storage.load_avatar(avatar_id)
+            if avatar_data:
+                return {"success": True, "avatar": avatar_data}
+            else:
+                return {"success": False, "error": "Avatar not found"}
+        except Exception as e:
+            logger.error(f"Failed to load avatar: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
+    def list_saved_avatars(tag: Optional[str] = None) -> Dict[str, Any]:
+        """List all saved avatars"""
+        try:
+            avatars = storage.list_avatars(tag)
+            return {"success": True, "avatars": avatars}
+        except Exception as e:
+            logger.error(f"Failed to list avatars: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
+    def delete_custom_avatar(avatar_id: str) -> Dict[str, Any]:
+        """Delete a saved avatar"""
+        try:
+            return storage.delete_avatar(avatar_id)
+        except Exception as e:
+            logger.error(f"Failed to delete avatar: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
+    def export_avatar(avatar_id: str, export_path: str) -> Dict[str, Any]:
+        """Export avatar as shareable package"""
+        try:
+            return storage.export_avatar(avatar_id, export_path)
+        except Exception as e:
+            logger.error(f"Failed to export avatar: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
+    def import_avatar(import_path: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """Import avatar from package"""
+        try:
+            return storage.import_avatar(import_path, name)
+        except Exception as e:
+            logger.error(f"Failed to import avatar: {e}")
+            return {"success": False, "error": str(e)}
+    
+    
+    @eel.expose
     def get_avatar_presets() -> Dict[str, Dict[str, Any]]:
         """Get predefined avatar presets"""
         return {
@@ -238,4 +312,6 @@ def setup_avatar_creation_server():
 
 
 __all__ = ['setup_avatar_creation_server', 'start_avatar_generation', 
-           'get_avatar_generation_status', 'get_avatar_presets']
+           'get_avatar_generation_status', 'get_avatar_presets',
+           'save_custom_avatar', 'load_custom_avatar', 'list_saved_avatars',
+           'delete_custom_avatar', 'export_avatar', 'import_avatar']
