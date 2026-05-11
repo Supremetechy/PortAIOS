@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS Avatar Creator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #00ffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 2px solid #00ffff33;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            background: linear-gradient(90deg, #00ffff, #ff00ff, #00ffff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+        }
+
+        @keyframes shimmer {
+            to { background-position: 200% center; }
+        }
+
+        .subtitle {
+            color: #00ffff99;
+            font-size: 1.1rem;
+            margin-top: 10px;
+        }
+
+        .wizard-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .panel {
+            background: rgba(0, 255, 255, 0.05);
+            border: 2px solid #00ffff33;
+            border-radius: 12px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #00ffff, #ff00ff);
+            border-radius: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: -1;
+        }
+
+        .panel:hover::before {
+            opacity: 0.2;
+        }
+
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .preset-card {
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff33;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .preset-card:hover {
+            border-color: #00ffff;
+            background: rgba(0, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .preset-card.selected {
+            border-color: #ff00ff;
+            background: rgba(255, 0, 255, 0.2);
+        }
+
+        .preset-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .preset-desc {
+            font-size: 0.9rem;
+            color: #00ffff99;
+        }
+
+        .slider-group {
+            margin-bottom: 25px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        .slider-value {
+            color: #ff00ff;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            background: rgba(0, 255, 255, 0.2);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #00ffff, #ff00ff);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #00ffff, #ff00ff);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            border: none;
+        }
+
+        .color-input {
+            width: 100%;
+            height: 50px;
+            border: 2px solid #00ffff33;
+            border-radius: 8px;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .preview-container {
+            aspect-ratio: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid #00ffff33;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .preview-placeholder {
+            text-align: center;
+            color: #00ffff66;
+        }
+
+        .preview-placeholder svg {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 15px;
+        }
+
+        .progress-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid #00ffff33;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .progress-container.active {
+            display: block;
+        }
+
+        .progress-bar-wrapper {
+            width: 100%;
+            height: 30px;
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+            margin: 15px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00ffff, #ff00ff, #00ffff);
+            background-size: 200% auto;
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: shimmer 2s linear infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .progress-text {
+            margin: 10px 0;
+            color: #00ffff;
+        }
+
+        .stage-text {
+            color: #ff00ff;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            border: 2px solid #00ffff;
+            background: rgba(0, 255, 255, 0.1);
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            border-color: #ff00ff;
+            color: #ff00ff;
+            background: rgba(255, 0, 255, 0.1);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: rgba(255, 0, 255, 0.3);
+            box-shadow: 0 0 20px rgba(255, 0, 255, 0.5);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .success-message {
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .success-message.active {
+            display: block;
+        }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.1);
+            border: 2px solid #ff0000;
+            color: #ff0000;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        @media (max-width: 968px) {
+            .wizard-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Avatar Creator</h1>
+            <p class="subtitle">Design your AI companion with lip-sync ready features</p>
+        </header>
+
+        <div class="wizard-container">
+            <!-- Left Panel: Presets & Customization -->
+            <div class="panel">
+                <h2 class="panel-title">🎨 Customize Your Avatar</h2>
+                
+                <!-- Presets -->
+                <h3 style="margin: 20px 0 15px 0; color: #00ffffaa;">Quick Presets</h3>
+                <div class="preset-grid" id="preset-grid">
+                    <!-- Presets loaded dynamically -->
+                </div>
+
+                <!-- Custom Sliders -->
+                <h3 style="margin: 30px 0 15px 0; color: #00ffffaa;">Fine-tune Features</h3>
+                
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Head Size</span>
+                        <span class="slider-value" id="head-radius-value">0.12</span>
+                    </div>
+                    <input type="range" id="head-radius" min="0.08" max="0.16" step="0.01" value="0.12">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>😊 Smile Intensity</span>
+                        <span class="slider-value" id="smile-value">0.0</span>
+                    </div>
+                    <input type="range" id="smile" min="0" max="1" step="0.1" value="0">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>😔 Frown Intensity</span>
+                        <span class="slider-value" id="frown-value">0.0</span>
+                    </div>
+                    <input type="range" id="frown" min="0" max="1" step="0.1" value="0">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>😲 Surprise Intensity</span>
+                        <span class="slider-value" id="surprise-value">0.0</span>
+                    </div>
+                    <input type="range" id="surprise" min="0" max="1" step="0.1" value="0">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>😉 Wink Intensity</span>
+                        <span class="slider-value" id="wink-value">0.0</span>
+                    </div>
+                    <input type="range" id="wink" min="0" max="1" step="0.1" value="0">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>🎤 Lip-Sync Strength</span>
+                        <span class="slider-value" id="viseme-value">1.0</span>
+                    </div>
+                    <input type="range" id="viseme" min="0" max="1" step="0.1" value="1.0">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>🎨 Skin Color</span>
+                    </div>
+                    <input type="color" id="head-color" class="color-input" value="#e6ccb3">
+                </div>
+            </div>
+
+            <!-- Right Panel: Preview & Generation -->
+            <div class="panel">
+                <h2 class="panel-title">👁️ Preview & Generate</h2>
+                
+                <div class="preview-container" id="preview-container">
+                    <div class="preview-placeholder">
+                        <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="50" cy="35" r="20"/>
+                            <circle cx="42" cy="32" r="3" fill="currentColor"/>
+                            <circle cx="58" cy="32" r="3" fill="currentColor"/>
+                            <path d="M 40 42 Q 50 48 60 42" stroke-linecap="round"/>
+                            <ellipse cx="50" cy="70" rx="25" ry="30"/>
+                        </svg>
+                        <p>Your avatar preview will appear here</p>
+                        <p style="font-size: 0.8rem; margin-top: 10px;">Configure settings and click Generate</p>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn" id="reset-btn">Reset</button>
+                    <button class="btn btn-primary" id="generate-btn">
+                        🚀 Generate Avatar
+                    </button>
+                </div>
+
+                <!-- Progress Container -->
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-text">
+                        <strong>Generating your avatar...</strong>
+                    </div>
+                    <div class="progress-bar-wrapper">
+                        <div class="progress-bar" id="progress-bar">
+                            <span id="progress-percent">0%</span>
+                        </div>
+                    </div>
+                    <div class="stage-text" id="stage-text">Initializing...</div>
+                </div>
+
+                <!-- Success Message -->
+                <div class="success-message" id="success-message">
+                    <h3>✅ Avatar Generated Successfully!</h3>
+                    <p id="success-path" style="margin: 10px 0;"></p>
+                    <button class="btn" id="load-avatar-btn" style="margin-top: 15px;">
+                        Load in 3D Viewer
+                    </button>
+                </div>
+
+                <!-- Error Message -->
+                <div class="error-message" id="error-message">
+                    <h3>❌ Generation Failed</h3>
+                    <p id="error-text"></p>
+                </div>
+
+                <!-- Info Box -->
+                <div style="margin-top: 30px; padding: 15px; background: rgba(0, 255, 255, 0.05); border-left: 3px solid #00ffff; border-radius: 4px;">
+                    <h4 style="margin-bottom: 10px; color: #00ffff;">ℹ️ About Generated Avatars</h4>
+                    <ul style="list-style: none; font-size: 0.9rem; line-height: 1.8; color: #00ffffcc;">
+                        <li>✓ ARKit blendshapes for expressions</li>
+                        <li>✓ Oculus Visemes for realistic lip-sync</li>
+                        <li>✓ Compatible with React 3D system</li>
+                        <li>✓ Optimized GLB format (~400KB)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Eel JavaScript bridge -->
+    <script type="text/javascript" src="./eel.js"></script>
+    
+    <script type="module" src="./avatar-creator.js"></script>
+</body>
+</html>

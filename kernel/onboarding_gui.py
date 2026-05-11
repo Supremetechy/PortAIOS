@@ -608,6 +608,14 @@ def start_eel_app():
         logger.info("UI voice commands enabled")
     except Exception as e:
         logger.warning(f"UI voice commands not available: {e}")
+    
+    # Setup avatar creation server
+    try:
+        from kernel.avatar_creation_server import setup_avatar_creation_server
+        setup_avatar_creation_server()
+        logger.info("Avatar creation server enabled")
+    except Exception as e:
+        logger.warning(f"Avatar creation server not available: {e}")
 
     def cleanup(signum=None, frame=None):
         stop_avatar_bridge()

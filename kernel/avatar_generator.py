@@ -136,15 +136,30 @@ def _viseme_m(base: np.ndarray, k: float) -> np.ndarray:
 
 # Order matters: GLB stores morph targets by index, names live in extras.
 _MORPH_BUILDERS: List[Tuple[str, Callable[[np.ndarray, float], np.ndarray], str]] = [
+    # Expressions (ARKit compatible)
     ("Smile", _smile, "smile_strength"),
+    ("mouthSmileLeft", _smile, "smile_strength"),  # ARKit naming
+    ("mouthSmileRight", _smile, "smile_strength"),
     ("Frown", _frown, "frown_strength"),
     ("Surprise", _surprise, "surprise_strength"),
+    ("browInnerUp", _surprise, "surprise_strength"),  # ARKit naming
     ("Wink_Left", _wink_left, "wink_strength"),
+    ("eyeBlinkLeft", _wink_left, "wink_strength"),  # ARKit naming
     ("Wink_Right", _wink_right, "wink_strength"),
+    ("eyeBlinkRight", _wink_right, "wink_strength"),  # ARKit naming
+    
+    # Oculus Visemes (for lip-sync)
+    ("viseme_aa", _viseme_a, "viseme_strength"),  # Oculus naming
     ("Viseme_A", _viseme_a, "viseme_strength"),
+    ("viseme_O", _viseme_o, "viseme_strength"),  # Oculus naming
     ("Viseme_O", _viseme_o, "viseme_strength"),
+    ("viseme_E", _viseme_e, "viseme_strength"),  # Oculus naming
     ("Viseme_E", _viseme_e, "viseme_strength"),
+    ("viseme_PP", _viseme_m, "viseme_strength"),  # Oculus naming (lips closed)
     ("Viseme_M", _viseme_m, "viseme_strength"),
+    
+    # ARKit jaw (critical for lip-sync)
+    ("jawOpen", _viseme_a, "viseme_strength"),  # Reuse viseme_a for jaw
 ]
 
 
