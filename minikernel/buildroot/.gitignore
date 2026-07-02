@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+output/*.iso
+output/*.vdi
+output/bzImage
+output/rootfs.*
+
+# Keep output directory structure
+!output/.gitkeep
+
+# Buildroot downloads
+dl/
+
+# Temporary files
+*.log
+*.tmp

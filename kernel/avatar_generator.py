@@ -18,8 +18,16 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-import trimesh
-import trimesh.visual  # ColorVisuals lives in this submodule, not the top-level package
+try:
+    import trimesh
+    import trimesh.visual  # ColorVisuals lives in this submodule, not the top-level package
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    if exc.name == "trimesh":
+        raise ModuleNotFoundError(
+            "Missing dependency: trimesh. Install it with `pip install -r web/requirements-avatar.txt` "
+            "or `pip install trimesh` before generating avatars."
+        ) from exc
+    raise
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +63,16 @@ class AvatarParams:
     def from_dict(cls, data: Optional[Dict]) -> "AvatarParams":
         if not data:
             return cls()
+        # JS-facing aliases → dataclass field names
+        _aliases = {"head_radius": "radius", "head_color": "skin_color"}
         valid_keys = {f.name for f in fields(cls)}
         kwargs = {}
         for key, value in data.items():
-            if key == "skin_color" and isinstance(value, (list, tuple)):
-                kwargs[key] = tuple(float(c) for c in value[:3])
-            elif key in valid_keys:
-                kwargs[key] = value
+            mapped = _aliases.get(key, key)
+            if mapped == "skin_color" and isinstance(value, (list, tuple)):
+                kwargs[mapped] = tuple(float(c) for c in value[:3])
+            elif mapped in valid_keys:
+                kwargs[mapped] = value
         return cls(**kwargs)
 
     def to_dict(self) -> Dict:

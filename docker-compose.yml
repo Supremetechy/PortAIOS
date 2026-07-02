@@ -1,0 +1,80 @@
+# =============================================================================
+# PortAIOS — Docker Compose Stack
+# =============================================================================
+# Usage:
+#   docker compose up                    # standard run
+#   docker compose up --build            # rebuild image first
+#   docker compose --profile gpu up      # NVIDIA GPU passthrough
+#   docker compose --profile viseme up   # standalone WebSocket bridge only
+#
+# Access the UI at http://localhost:8001 after startup.
+
+services:
+
+  # ── Main AIOS application ─────────────────────────────────────────────────
+  aios:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+        INCLUDE_TTS: "${PORTAIOS_INCLUDE_TTS:-0}"
+    image: portaios:latest
+    container_name: portaios
+    ports:
+      - "${AIOS_WEB_PORT:-8001}:8001"    # Web UI
+      - "${AIOS_WS_PORT:-8765}:8765"     # WebSocket viseme stream
+    volumes:
+      - ./models:/app/models             # GLB / GGUF model files (host-mounted)
+      - ./assets:/app/assets             # Static assets
+      - aios-config:/home/aios/.aios    # Persistent onboarding config & settings
+    environment:
+      - AIOS_HEADLESS=1
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── GPU-accelerated variant ───────────────────────────────────────────────
+  # Requires NVIDIA Container Toolkit: https://docs.nvidia.com/datacenter/cloud-native/
+  # Enable with: docker compose --profile gpu up
+  aios-gpu:
+    extends:
+      service: aios
+    profiles: [gpu]
+    container_name: portaios-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - AIOS_HEADLESS=1
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+  # ── Standalone WebSocket viseme bridge ───────────────────────────────────
+  # Runs only the avatar/viseme WebSocket server independently.
+  # Enable with: docker compose --profile viseme up viseme-bridge
+  viseme-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: portaios:latest
+    container_name: portaios-viseme
+    command: ["python", "docker_server.py"]
+    ports:
+      - "${VISEME_WS_PORT:-8765}:8765"
+    restart: unless-stopped
+    profiles: [viseme]
+
+volumes:
+  aios-config:
+    name: portaios-config

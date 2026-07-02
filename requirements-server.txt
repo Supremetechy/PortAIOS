@@ -1,0 +1,20 @@
+# =============================================================================
+# PortAIOS — Server / Headless / Docker Requirements
+# =============================================================================
+# Used by the Docker image and any headless deployment.
+# Differences from requirements.txt:
+#   - opencv-python → opencv-python-headless (no display libs needed)
+#   - pyaudio excluded (requires PortAudio hardware; browser mic handles voice)
+#   - PyQt6 / pywebview excluded (require a display server)
+#   - TTS / piper-tts excluded (large optional download — mount pre-downloaded models)
+
+# Pull in everything from the core list, then override below
+-r requirements.txt
+
+# ── DeepGram Voice Agent (included in server deployments) ────────────────────
+# Already inherited from requirements.txt via -r above
+
+# ── Override: headless OpenCV (no libGL / display requirements) ───────────────
+# Uninstall opencv-python first if switching an existing env:
+#   pip uninstall opencv-python && pip install opencv-python-headless
+opencv-python-headless>=4.8.0

@@ -126,13 +126,14 @@ function _buildAvatarBridge() {
     throw err;
   }
   return React.forwardRef(function AvatarBridge(props, ref) {
-    const { modelUrl, emotion, agentId } = props;
+    const { modelUrl, emotion, agentId, customMorphs } = props;
     const { streamRef, speak, stop } = useSpeechStream();
     React.useImperativeHandle(ref, () => ({ speak, stop }), [speak, stop]);
     return React.createElement(Avatar, {
       agentId,
       modelUrl,
       emotion,
+      customMorphs,
       speechStream: streamRef,
     });
   });
@@ -233,6 +234,15 @@ export class ReactAvatarController {
     };
 
     this.currentEmotion = this.options.initialEmotion;
+    this.customMorphs = {
+      smile: 0.25,
+      frown: 0,
+      surprise: 0,
+      wink: 0,
+      viseme: 0.5,
+      subdivisions: 4,
+      skinColor: [216, 184, 153],
+    };
     this.reactRoot = null;
     this.bridgeRef = React.createRef();
     this.AvatarBridge = null;
@@ -290,6 +300,18 @@ export class ReactAvatarController {
           '[ReactAvatarController] container is display:none at init time. ' +
           'R3F may report zero-size framebuffer errors until the container is shown.'
         );
+      }
+      if (desc.computedDisplay === 'none' || desc.width === 0 || desc.height === 0) {
+        if (!this._initRetryId) {
+          console.warn('[ReactAvatarController] deferring init until the container has size');
+          this._initRetryId = requestAnimationFrame(() => {
+            this._initRetryId = null;
+            this.init().catch((retryErr) => {
+              console.warn('[ReactAvatarController] deferred init retry failed:', retryErr);
+            });
+          });
+        }
+        return;
       }
 
       // ---- Phase 1: dynamic deps --------------------------------------
@@ -360,6 +382,7 @@ export class ReactAvatarController {
             ref: this.bridgeRef,
             modelUrl: this.options.modelUrl,
             emotion: this.currentEmotion,
+            customMorphs: this.customMorphs,
             agentId: this.options.agentId,
           })
         )
@@ -409,11 +432,20 @@ export class ReactAvatarController {
     this.render();
   }
 
+  setCustomization(next = {}) {
+    this.customMorphs = {
+      ...this.customMorphs,
+      ...next,
+    };
+    this.render();
+  }
+
   stopSpeaking() {
     this.bridgeRef.current?.stop();
   }
 
   destroy() {
+    if (this._initRetryId) cancelAnimationFrame(this._initRetryId);
     this.bridgeRef.current?.stop();
     if (this.reactRoot) {
       try { this.reactRoot.unmount(); } catch (err) {

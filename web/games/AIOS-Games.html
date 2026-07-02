@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIOS - Intelligence Redefined</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.184.0"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --neon-blue:    #00f2ff;
+        --neon-magenta: #ff00ff;
+        --bg-dark:      #050505;
+        --glass-bg:     rgba(255, 255, 255, 0.05);
+        --glass-border: rgba(255, 255, 255, 0.1);
+      }
+
+      html, body, #game-container {
+        width: 100%; height: 100%; margin: 0; padding: 0;
+        background: var(--bg-dark); overflow: hidden; color: white;
+        font-family: 'Inter', sans-serif;
+      }
+      body { touch-action: none; }
+
+      /* ── Desktop ──────────────────────────────────────────────────── */
+      #os-desktop {
+        width: 100%; height: 100%;
+        background-image: url('assets/images/os_bg.webp');
+        background-size: cover; background-position: center;
+        position: relative; display: flex; flex-direction: column;
+      }
+      #app-grid {
+        padding: 40px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, 120px);
+        gap: 30px;
+        flex-grow: 1;
+      }
+      .app-icon {
+        width: 100px; display: flex; flex-direction: column;
+        align-items: center; cursor: pointer;
+        transition: transform 0.2s, filter 0.2s; text-align: center;
+      }
+      .app-icon:hover, .app-icon.gesture-hover {
+        transform: scale(1.1);
+        filter: drop-shadow(0 0 10px var(--neon-blue));
+      }
+      .app-icon img { width: 80px; height: 80px; margin-bottom: 8px; border-radius: 20px; }
+      .app-icon span { font-size: 14px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
+
+      /* ── Windows ─────────────────────────────────────────────────── */
+      .window {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        width: 90%; height: 85%;
+        background: rgba(10,10,10,.95); backdrop-filter: blur(20px);
+        border: 1px solid var(--glass-border); border-radius: 12px;
+        display: none; flex-direction: column;
+        box-shadow: 0 20px 50px rgba(0,0,0,.5); z-index: 100;
+      }
+      .window-header {
+        padding: 10px 20px; background: rgba(255,255,255,.05);
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid var(--glass-border);
+      }
+      .window-title { font-family: 'Orbitron', sans-serif; font-size: 16px; letter-spacing: 1px; }
+      .close-btn { cursor: pointer; font-size: 24px; color: #ff5555; }
+      .window-content { flex-grow: 1; position: relative; overflow: hidden; }
+
+      /* ── Taskbar ─────────────────────────────────────────────────── */
+      #taskbar {
+        height: 50px;
+        background: rgba(20,20,20,.8); backdrop-filter: blur(10px);
+        border-top: 1px solid var(--glass-border);
+        display: flex; align-items: center; padding: 0 20px;
+        justify-content: space-between; gap: 8px; z-index: 200;
+      }
+      .clock { font-family: 'Orbitron', sans-serif; font-size: 14px; }
+      .taskbar-controls { display: flex; align-items: center; gap: 8px; }
+      .audio-toggle { cursor: pointer; opacity: .7; }
+      .audio-toggle:hover { opacity: 1; }
+
+      /* Taskbar status chips */
+      .tb-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 10px; border-radius: 20px; font-size: 11px;
+        font-family: 'Orbitron', sans-serif; letter-spacing: .5px;
+        border: 1px solid rgba(0,242,255,.3);
+        background: rgba(0,242,255,.07); color: rgba(255,255,255,.7);
+        white-space: nowrap; min-width: 90px; justify-content: center;
+        transition: all .3s;
+      }
+      .tb-chip[data-state="active"]   { border-color: var(--neon-blue); color: var(--neon-blue); background: rgba(0,242,255,.15); }
+      .tb-chip[data-state="awake"]    { border-color: #aaff00; color: #aaff00; background: rgba(170,255,0,.12); }
+      .tb-chip[data-state="command"]  { border-color: var(--neon-magenta); color: var(--neon-magenta); background: rgba(255,0,255,.12); }
+      .tb-chip[data-state="interim"]  { border-color: #ffaa00; color: #ffaa00; background: rgba(255,170,0,.1); }
+      .tb-chip[data-state="standby"]  { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.5); }
+      .tb-chip[data-state="error"]    { border-color: #ff5555; color: #ff5555; }
+      .tb-chip[data-state="loading"]  { border-color: #aaa; color: #aaa; animation: pulse 1s infinite; }
+
+      /* Taskbar icon buttons */
+      .tb-btn {
+        cursor: pointer; padding: 4px 10px; border-radius: 6px; font-size: 13px;
+        border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.05);
+        color: rgba(255,255,255,.7); transition: all .2s; user-select: none;
+      }
+      .tb-btn:hover { border-color: var(--neon-blue); color: var(--neon-blue); background: rgba(0,242,255,.1); }
+      .tb-btn.active { border-color: var(--neon-blue); color: var(--neon-blue); background: rgba(0,242,255,.2); }
+
+      /* ── Gesture cursor (follows index-finger tip) ─────────────────── */
+      #gesture-cursor {
+        position: fixed; width: 22px; height: 22px; border-radius: 50%;
+        border: 2px solid var(--neon-blue);
+        background: rgba(0,242,255,.25);
+        pointer-events: none; z-index: 1000; display: none;
+        transform: translate(-50%,-50%);
+        box-shadow: 0 0 12px var(--neon-blue), 0 0 4px var(--neon-blue);
+        transition: left .04s linear, top .04s linear;
+      }
+      #gesture-cursor::after {
+        content: ''; position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%,-50%);
+        width: 4px; height: 4px; border-radius: 50%;
+        background: var(--neon-blue);
+      }
+
+      /* ── Gesture camera PiP ───────────────────────────────────────── */
+      #gesture-pip {
+        position: fixed; bottom: 60px; left: 10px;
+        width: 200px; height: 150px;
+        border: 1px solid rgba(0,242,255,.4); border-radius: 8px;
+        overflow: hidden; background: #000; z-index: 150;
+        display: none;
+        box-shadow: 0 4px 20px rgba(0,242,255,.2);
+      }
+      #gesture-pip-label {
+        position: absolute; top: 4px; left: 6px; z-index: 2;
+        font-size: 9px; font-family: 'Orbitron', sans-serif;
+        color: var(--neon-blue); opacity: .7; pointer-events: none;
+        letter-spacing: .5px;
+      }
+
+      /* ── Help / Cheat-sheet overlay ───────────────────────────────── */
+      #help-overlay {
+        position: fixed; inset: 0; z-index: 500;
+        background: rgba(0,0,0,.85); backdrop-filter: blur(8px);
+        display: none; align-items: center; justify-content: center;
+      }
+      #help-panel {
+        background: rgba(10,10,20,.95); border: 1px solid rgba(0,242,255,.3);
+        border-radius: 12px; padding: 30px; max-width: 760px; width: 95%;
+        max-height: 85vh; overflow-y: auto;
+        box-shadow: 0 0 40px rgba(0,242,255,.15);
+      }
+      #help-panel h2 {
+        font-family: 'Orbitron', sans-serif; color: var(--neon-blue);
+        margin: 0 0 6px; font-size: 18px; letter-spacing: 2px;
+      }
+      #help-panel .help-subtitle { font-size: 12px; color: rgba(255,255,255,.5); margin-bottom: 20px; }
+      .help-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      @media (max-width: 560px) { .help-cols { grid-template-columns: 1fr; } }
+      .help-section h3 {
+        font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 1px;
+        color: var(--neon-magenta); margin: 0 0 10px;
+        border-bottom: 1px solid rgba(255,0,255,.2); padding-bottom: 6px;
+      }
+      .help-row {
+        display: flex; gap: 8px; align-items: flex-start;
+        margin-bottom: 7px; font-size: 12px;
+      }
+      .help-key {
+        background: rgba(0,242,255,.12); border: 1px solid rgba(0,242,255,.3);
+        border-radius: 4px; padding: 2px 7px; font-family: 'Orbitron', sans-serif;
+        font-size: 10px; color: var(--neon-blue); white-space: nowrap; flex-shrink: 0;
+      }
+      .help-desc { color: rgba(255,255,255,.75); line-height: 1.4; }
+      #help-close {
+        margin-top: 22px; padding: 10px 24px;
+        background: var(--neon-blue); color: #000;
+        border: none; border-radius: 4px;
+        font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 12px;
+        cursor: pointer; letter-spacing: 1px;
+      }
+      #help-close:hover { background: #fff; }
+
+      /* ── Shared overlays & buttons ────────────────────────────────── */
+      .overlay {
+        position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: rgba(0,0,0,.8); z-index: 10; text-align: center;
+      }
+      .btn {
+        padding: 12px 24px; background: var(--neon-blue); color: black;
+        border: none; border-radius: 4px; font-family: 'Orbitron', sans-serif;
+        font-weight: bold; cursor: pointer; margin-top: 20px; transition: background .2s;
+      }
+      .btn:hover { background: #fff; }
+
+      @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    </style>
+  </head>
+  <body>
+    <!-- Gesture cursor (fixed, follows hand index-finger tip) -->
+    <div id="gesture-cursor"></div>
+
+    <!-- Gesture camera PiP -->
+    <div id="gesture-pip">
+      <span id="gesture-pip-label">HAND TRACK</span>
+    </div>
+
+    <!-- Help / Cheat-sheet overlay -->
+    <div id="help-overlay">
+      <div id="help-panel">
+        <h2>AIOS CONTROL REFERENCE</h2>
+        <div class="help-subtitle">Voice · Gesture · Keyboard</div>
+
+        <div class="help-cols">
+
+          <!-- Voice commands -->
+          <div class="help-section">
+            <h3>🎤 VOICE COMMANDS</h3>
+            <div class="help-row"><span class="help-key">Hey AIOS</span><span class="help-desc">Wake the system</span></div>
+            <div class="help-row"><span class="help-key">Open Memory</span><span class="help-desc">Launch Memory Match</span></div>
+            <div class="help-row"><span class="help-key">Open Shooter</span><span class="help-desc">Launch Arena Shooter</span></div>
+            <div class="help-row"><span class="help-key">Open Poker</span><span class="help-desc">Launch Poker Hands</span></div>
+            <div class="help-row"><span class="help-key">Close / Exit</span><span class="help-desc">Close current game</span></div>
+            <div class="help-row"><span class="help-key">Mute / Unmute</span><span class="help-desc">Toggle audio</span></div>
+            <div class="help-row"><span class="help-key">Restart</span><span class="help-desc">Restart current game</span></div>
+            <div class="help-row"><span class="help-key">Sleep</span><span class="help-desc">Return to standby</span></div>
+            <h3 style="margin-top:12px">🃏 MEMORY VOICE</h3>
+            <div class="help-row"><span class="help-key">Flip [1-16]</span><span class="help-desc">Flip card by number</span></div>
+            <div class="help-row"><span class="help-key">Hint</span><span class="help-desc">Briefly reveal all cards</span></div>
+            <h3 style="margin-top:12px">🚀 SHOOTER VOICE</h3>
+            <div class="help-row"><span class="help-key">Fire / Shoot</span><span class="help-desc">Begin auto-fire</span></div>
+            <div class="help-row"><span class="help-key">Cease Fire</span><span class="help-desc">Stop auto-fire</span></div>
+            <div class="help-row"><span class="help-key">Move [dir]</span><span class="help-desc">Burst move: up/down/left/right</span></div>
+            <h3 style="margin-top:12px">🃏 POKER VOICE</h3>
+            <div class="help-row"><span class="help-key">Select [1-8]</span><span class="help-desc">Toggle card by number</span></div>
+            <div class="help-row"><span class="help-key">Analyze</span><span class="help-desc">Submit hand</span></div>
+            <div class="help-row"><span class="help-key">Clear</span><span class="help-desc">Deselect all cards</span></div>
+          </div>
+
+          <!-- Gestures + Keyboard -->
+          <div class="help-section">
+            <h3>🤚 HAND GESTURES</h3>
+            <div class="help-row"><span class="help-key">🖐 Open Palm</span><span class="help-desc">Hover / Stop shooting / Analyze (poker)</span></div>
+            <div class="help-row"><span class="help-key">✊ Fist</span><span class="help-desc">Shoot (shooter)</span></div>
+            <div class="help-row"><span class="help-key">👆 Point</span><span class="help-desc">Move cursor / aim</span></div>
+            <div class="help-row"><span class="help-key">🤏 Pinch</span><span class="help-desc">Click / Flip card / Select card</span></div>
+            <div class="help-row"><span class="help-key">✌️ Peace</span><span class="help-desc">Restart current game</span></div>
+            <div class="help-row"><span class="help-key">👍 Thumbs Up</span><span class="help-desc">Confirm / Analyze (poker)</span></div>
+            <div class="help-row"><span class="help-key">← → Swipe</span><span class="help-desc">Directional move (shooter)</span></div>
+
+            <h3 style="margin-top:14px">⌨️ KEYBOARD (SHOOTER)</h3>
+            <div class="help-row"><span class="help-key">W A S D</span><span class="help-desc">Move player</span></div>
+            <div class="help-row"><span class="help-key">Arrow Keys</span><span class="help-desc">Move player</span></div>
+            <div class="help-row"><span class="help-key">Mouse</span><span class="help-desc">Aim direction</span></div>
+            <div class="help-row"><span class="help-key">Click Hold</span><span class="help-desc">Continuous fire</span></div>
+
+            <h3 style="margin-top:14px">⌨️ KEYBOARD (MEMORY / POKER)</h3>
+            <div class="help-row"><span class="help-key">Click</span><span class="help-desc">Flip card / Select card</span></div>
+
+            <h3 style="margin-top:14px">🖥️ TASKBAR BUTTONS</h3>
+            <div class="help-row"><span class="help-key">🎤</span><span class="help-desc">Toggle voice recognition</span></div>
+            <div class="help-row"><span class="help-key">🤚</span><span class="help-desc">Toggle gesture camera</span></div>
+            <div class="help-row"><span class="help-key">?</span><span class="help-desc">Show this help panel</span></div>
+            <div class="help-row"><span class="help-key">🔊</span><span class="help-desc">Mute / unmute audio</span></div>
+          </div>
+
+        </div>
+        <button id="help-close">CLOSE</button>
+      </div>
+    </div>
+
+    <!-- Main container -->
+    <div id="game-container">
+      <div id="os-desktop">
+        <div id="app-grid">
+          <div class="app-icon" id="app-memory">
+            <img src="assets/images/appmemory_icon.webp" alt="Memory">
+            <span>Memory Match</span>
+          </div>
+          <div class="app-icon" id="app-shooter">
+            <img src="assets/images/app_shooter_icon.webp" alt="Arena Shooter">
+            <span>Arena Shooter</span>
+          </div>
+          <div class="app-icon" id="app-poker">
+            <img src="assets/images/app_poker_icon.webp" alt="Poker Hands">
+            <span>Poker Hands</span>
+          </div>
+        </div>
+
+        <!-- Taskbar -->
+        <div id="taskbar">
+          <div class="clock" id="os-clock">12:00 PM</div>
+
+          <div class="taskbar-controls">
+            <!-- Voice status + toggle -->
+            <span id="voice-status"  class="tb-chip" data-state="idle">🎤 Off</span>
+            <button id="voice-toggle"   class="tb-btn" title="Toggle Voice Control">🎤</button>
+
+            <!-- Gesture status + toggle -->
+            <span id="gesture-status" class="tb-chip" data-state="idle">🤚 Off</span>
+            <button id="gesture-toggle" class="tb-btn" title="Toggle Gesture Control">🤚</button>
+
+            <!-- Help -->
+            <button id="help-toggle" class="tb-btn" title="Control Reference">?</button>
+
+            <!-- Audio -->
+            <div class="audio-toggle" id="mute-toggle">🔊</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- App Windows -->
+      <div id="window-memory" class="window">
+        <div class="window-header">
+          <span class="window-title">MEMORY MATCH</span>
+          <span class="close-btn" onclick="window.closeApp('memory')">&times;</span>
+        </div>
+        <div class="window-content" id="memory-root"></div>
+      </div>
+
+      <div id="window-shooter" class="window">
+        <div class="window-header">
+          <span class="window-title">ARENA SHOOTER</span>
+          <span class="close-btn" onclick="window.closeApp('shooter')">&times;</span>
+        </div>
+        <div class="window-content" id="shooter-root"></div>
+      </div>
+
+      <div id="window-poker" class="window">
+        <div class="window-header">
+          <span class="window-title">POKER HANDS</span>
+          <span class="close-btn" onclick="window.closeApp('poker')">&times;</span>
+        </div>
+        <div class="window-content" id="poker-root"></div>
+      </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

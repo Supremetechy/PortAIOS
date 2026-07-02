@@ -37,24 +37,16 @@ _generation_lock = threading.Lock()
 
 
 def _update_progress(progress: int, stage: str, message: str):
-    """Update generation progress and notify frontend"""
+    """Update generation progress (polling-based, no WebSocket push)"""
     global _generation_state
     with _generation_lock:
         _generation_state["progress"] = progress
         _generation_state["stage"] = stage
         _generation_state["message"] = message
-        logger.info(f"Avatar generation: {progress}% - {stage} - {message}")
     
-    # Notify frontend if eel is available
-    if EEL_AVAILABLE:
-        try:
-            eel.avatar_generation_progress({
-                "progress": progress,
-                "stage": stage,
-                "message": message
-            })
-        except Exception as e:
-            logger.debug(f"Could not send progress update to frontend: {e}")
+    # Log progress - frontend will poll for status instead of receiving push updates
+    # This avoids WebSocket connection issues during long-running generation
+    logger.info(f"Avatar generation: {progress}% - {stage} - {message}")
 
 
 def _generate_avatar_async(params: Dict[str, Any], callback: Optional[Callable] = None):
@@ -80,31 +72,28 @@ def _generate_avatar_async(params: Dict[str, Any], callback: Optional[Callable] 
         time.sleep(0.3)
         
         _update_progress(60, "generating_glb", "Generating GLB file...")
-        result = generate_avatar(
-            head_radius=avatar_params.head_radius,
-            head_color=avatar_params.head_color,
-            smile_intensity=avatar_params.smile_strength,
-            frown_intensity=avatar_params.frown_strength,
-            surprise_intensity=avatar_params.surprise_strength,
-            wink_intensity=avatar_params.wink_strength,
-            viseme_intensity=avatar_params.viseme_strength
-        )
+        result = generate_avatar(params=avatar_params)
         
         _update_progress(80, "validating", "Validating morph targets...")
         time.sleep(0.3)
         
         _update_progress(95, "finalizing", "Finalizing avatar...")
         
+        _repo_root = Path(__file__).resolve().parent.parent
+        try:
+            result_path = "/" + result.relative_to(_repo_root).as_posix()
+        except ValueError:
+            result_path = str(result)
         with _generation_lock:
-            _generation_state["result_path"] = result["path"]
+            _generation_state["result_path"] = result_path
             _generation_state["in_progress"] = False
-        
-        _update_progress(100, "complete", f"Avatar generated successfully: {Path(result['path']).name}")
-        
+
+        _update_progress(100, "complete", f"Avatar generated successfully: {result.name}")
+
         if callback:
-            callback(True, result)
-        
-        return result
+            callback(True, {"path": result_path})
+
+        return {"path": result_path}
         
     except Exception as e:
         logger.error(f"Avatar generation failed: {e}", exc_info=True)

@@ -1,0 +1,46 @@
+# MiniKernel LLM Inference Service
+# Separate container for LLM inference with GPU support
+
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+LABEL maintainer="MiniKernel Project"
+LABEL description="LLM Inference Service for MiniKernel"
+LABEL version="0.1.0"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+# Install Python and dependencies
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3-pip \
+    git \
+    cmake \
+    build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install llama.cpp with CUDA support
+RUN pip install --no-cache-dir \
+    llama-cpp-python[server] \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu122
+
+# Create model directory
+RUN mkdir -p /models
+
+WORKDIR /models
+
+# Expose LLM server port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run llama.cpp server
+CMD ["python3", "-m", "llama_cpp.server", \
+     "--model", "/models/llama-3-8b-q4.gguf", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--n_ctx", "2048", \
+     "--n_gpu_layers", "35"]

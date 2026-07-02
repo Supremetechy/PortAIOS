@@ -882,8 +882,137 @@ def list_processes(ctx: Dict[str, Any] = {}) -> CommandResult:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# TERMINAL SESSION COMMANDS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _get_terminal_manager():
+    """Lazy-import so the terminal manager is only required when used."""
+    from kernel.terminal_manager import get_terminal_manager
+    return get_terminal_manager()
+
+
+def run_in_terminal(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """
+    Run a shell command inside a named, persistent PTY session.
+
+    ctx keys:
+        command      – the shell command to execute (required)
+        session_name – human-readable session name (default: 'agent')
+    """
+    command = ctx.get("command", "").strip()
+    if not command:
+        return CommandResult(
+            False, "No command specified.",
+            speak="What command should I run in the terminal?",
+        )
+
+    session_name = ctx.get("session_name", "agent")
+
+    try:
+        mgr = _get_terminal_manager()
+        sessions = mgr.list_sessions()
+        # Reuse an existing session with the same name if alive
+        existing = next((s for s in sessions if s["name"] == session_name and s["alive"]), None)
+        session_id = existing["id"] if existing else mgr.create_session(session_name)
+        mgr.send_command(session_id, command)
+        return CommandResult(
+            True,
+            f"Running in terminal session '{session_name}': {command}",
+            data={"session_id": session_id, "session_name": session_name, "command": command,
+                  "action": "show_terminal"},
+            speak=f"Running that in the terminal now.",
+        )
+    except Exception as e:
+        logger.error(f"run_in_terminal failed: {e}")
+        return CommandResult(False, str(e), speak=f"Terminal error: {e}")
+
+
+def open_terminal(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Open the embedded terminal panel and create a session if needed."""
+    session_name = ctx.get("session_name", "main")
+    try:
+        mgr = _get_terminal_manager()
+        sessions = mgr.list_sessions()
+        existing = next((s for s in sessions if s["name"] == session_name and s["alive"]), None)
+        session_id = existing["id"] if existing else mgr.create_session(session_name)
+        return CommandResult(
+            True,
+            f"Terminal session '{session_name}' ready.",
+            data={"session_id": session_id, "action": "show_terminal"},
+            speak="Opening the terminal.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not open terminal: {e}")
+
+
+def list_terminal_sessions(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """List all active terminal sessions."""
+    try:
+        mgr = _get_terminal_manager()
+        sessions = mgr.list_sessions()
+        if not sessions:
+            return CommandResult(True, "No active terminal sessions.",
+                                speak="There are no active terminal sessions.")
+        lines = [f"Active terminal sessions ({len(sessions)}):"]
+        for s in sessions:
+            status = "alive" if s["alive"] else "closed"
+            lines.append(f"  [{s['id']}] {s['name']} — {status} — {s['cols']}×{s['rows']}")
+        return CommandResult(
+            True, "\n".join(lines),
+            data={"sessions": sessions},
+            speak=f"{len(sessions)} terminal session{'s' if len(sessions) != 1 else ''} active.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Could not list sessions: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # COMMAND REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════
+
+def browserbase_browse(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Open Browserbase cloud browser and navigate to a URL."""
+    url = ctx.get("url", "")
+    try:
+        from kernel.browserbase_automation import _manager
+        session = _manager.create_session()
+        if url:
+            _manager.navigate(session["session_id"], url)
+        return CommandResult(
+            True,
+            f"Browserbase session started: {session['session_id'][:12]}…\nLive view: {session['live_view_url']}",
+            data=session,
+            speak=f"Cloud browser session started{'. Navigating to ' + url if url else ''}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Browserbase error: {e}")
+
+
+def browserbase_automate(ctx: Dict[str, Any] = {}) -> CommandResult:
+    """Run an automation task in an active Browserbase session."""
+    task = ctx.get("task", "")
+    session_id = ctx.get("session_id", "")
+    if not task:
+        return CommandResult(False, "No task specified.", speak="What should I automate?")
+    try:
+        from kernel.browserbase_automation import _manager
+        sessions = _manager.list_sessions()
+        if not sessions and not session_id:
+            # Auto-create a session
+            session = _manager.create_session()
+            session_id = session["session_id"]
+        elif not session_id and sessions:
+            session_id = sessions[0]["session_id"]
+        result = _manager.run_task(session_id, task)
+        return CommandResult(
+            result.get("success", False),
+            result.get("message", ""),
+            data=result,
+            speak=f"Automation task complete: {task[:60]}.",
+        )
+    except Exception as e:
+        return CommandResult(False, str(e), speak=f"Automation error: {e}")
+
 
 COMMANDS = {
     "list_programs":      list_programs,
@@ -906,6 +1035,10 @@ COMMANDS = {
     "read_document":      read_document,
     "edit_document":      edit_document,
     "delete_document":    delete_document,
-    "create_directory":   create_directory
-    
+    "create_directory":   create_directory,
+    "run_in_terminal":        run_in_terminal,
+    "open_terminal":          open_terminal,
+    "list_terminal_sessions": list_terminal_sessions,
+    "browserbase_browse":     browserbase_browse,
+    "browserbase_automate":   browserbase_automate,
 }

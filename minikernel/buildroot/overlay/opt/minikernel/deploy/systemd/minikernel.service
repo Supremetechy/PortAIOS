@@ -1,0 +1,50 @@
+# MiniKernel systemd service unit
+# AI-First Voice-Controlled Operating System
+#
+# Installation:
+#   sudo cp minikernel.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable minikernel
+#   sudo systemctl start minikernel
+
+[Unit]
+Description=MiniKernel - AI-First Voice-Controlled OS
+Documentation=https://github.com/yourusername/minikernel
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=minikernel
+Group=minikernel
+WorkingDirectory=/opt/minikernel
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="MINIKERNEL_MODE=text"
+Environment="MINIKERNEL_LOG_LEVEL=INFO"
+
+# Start MiniKernel
+ExecStart=/usr/bin/python3 /opt/minikernel/minikernel/boot.py --mode text --confirmation text
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=200%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/minikernel/data /opt/minikernel/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minikernel
+
+[Install]
+WantedBy=multi-user.target

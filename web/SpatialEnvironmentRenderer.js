@@ -95,8 +95,19 @@ class SpatialEnvironmentRenderer {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
 
   _init() {
+    if (this._destroyed) return;
     const W = this.container.clientWidth;
     const H = this.container.clientHeight;
+
+    if (W === 0 || H === 0) {
+      if (!this._initRetryId) {
+        this._initRetryId = requestAnimationFrame(() => {
+          this._initRetryId = null;
+          this._init();
+        });
+      }
+      return;
+    }
 
     // Scene & camera
     this._scene = new THREE.Scene();
@@ -581,6 +592,7 @@ class SpatialEnvironmentRenderer {
   onResize() {
     const W = this.container.clientWidth;
     const H = this.container.clientHeight;
+    if (!W || !H || !this._camera || !this._renderer || !this._composer) return;
     this._camera.aspect = W / H;
     this._camera.updateProjectionMatrix();
     this._renderer.setSize(W, H);
@@ -589,6 +601,8 @@ class SpatialEnvironmentRenderer {
 
   /** Tear down renderer, geometries, and event listeners. */
   destroy() {
+    this._destroyed = true;
+    if (this._initRetryId) cancelAnimationFrame(this._initRetryId);
     if (this._animId) cancelAnimationFrame(this._animId);
 
     this._scene.traverse(obj => {

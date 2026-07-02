@@ -1,0 +1,326 @@
+# Complete Kubernetes Production Deployment
+# Apply with: kubectl apply -f kubernetes-production.yaml
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minikernel-prod
+  labels:
+    name: minikernel-prod
+    environment: production
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minikernel-config
+  namespace: minikernel-prod
+data:
+  config.yaml: |
+    mode: text
+    log_level: INFO
+    confirmation_mode: text
+    security:
+      capabilities:
+        file_read: true
+        file_write: false
+        file_delete: false
+        process_list: true
+        process_kill: false
+        package_install: false
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+  labels:
+    app: minikernel
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minikernel-data
+  namespace: minikernel-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minikernel-logs
+  namespace: minikernel-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+  labels:
+    app: minikernel
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: minikernel
+  template:
+    metadata:
+      labels:
+        app: minikernel
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: minikernel
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - minikernel
+              topologyKey: kubernetes.io/hostname
+      
+      containers:
+      - name: minikernel
+        image: minikernel:0.1.0
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: MINIKERNEL_MODE
+          value: text
+        - name: MINIKERNEL_LOG_LEVEL
+          value: INFO
+        
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        
+        livenessProbe:
+          exec:
+            command:
+            - python3
+            - -c
+            - "import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('healthy')"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - python3
+            - -c
+            - "import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('ready')"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        
+        volumeMounts:
+        - name: data
+          mountPath: /opt/minikernel/data
+        - name: logs
+          mountPath: /opt/minikernel/logs
+        - name: config
+          mountPath: /opt/minikernel/config
+          readOnly: true
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: minikernel-data
+      - name: logs
+        persistentVolumeClaim:
+          claimName: minikernel-logs
+      - name: config
+        configMap:
+          name: minikernel-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+  labels:
+    app: minikernel
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: minikernel
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: minikernel
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 4
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - minikernel.example.com
+    secretName: minikernel-tls
+  rules:
+  - host: minikernel.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minikernel
+            port:
+              number: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: minikernel
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minikernel
+  namespace: minikernel-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: minikernel
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to:
+    - namespaceSelector: {}

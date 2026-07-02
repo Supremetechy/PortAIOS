@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Guardian — Particle Avatar Test</title>
+
+    <!-- Same importmap as avatar-integration.html so 'three' resolves correctly -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three":          "https://esm.sh/three@0.157.0",
+        "three/":         "https://esm.sh/three@0.157.0/",
+        "react":          "https://esm.sh/react@18.2.0",
+        "react/":         "https://esm.sh/react@18.2.0/",
+        "react-dom":      "https://esm.sh/react-dom@18.2.0?external=react,scheduler",
+        "react-dom/":     "https://esm.sh/react-dom@18.2.0/",
+        "scheduler":      "https://esm.sh/scheduler@0.23.0",
+        "scheduler/":     "https://esm.sh/scheduler@0.23.0/"
+      }
+    }
+    </script>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #010608;
+            color: #00f5ff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #avatar-layer {
+            position: fixed;
+            inset: 0;
+        }
+
+        /* ── Control panel ───────────────────────────────────────── */
+        #controls {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            width: 280px;
+            background: rgba(0,10,18,0.88);
+            border: 1px solid rgba(0,245,255,0.35);
+            border-radius: 8px;
+            padding: 18px;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 0 24px rgba(0,245,255,0.15);
+        }
+
+        #controls h2 {
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #00f5ff;
+            text-shadow: 0 0 8px #00f5ff;
+            margin-bottom: 14px;
+            border-bottom: 1px solid rgba(0,245,255,0.2);
+            padding-bottom: 8px;
+        }
+
+        .section { margin-bottom: 14px; }
+        .section label {
+            display: block;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: rgba(0,245,255,0.6);
+            margin-bottom: 6px;
+        }
+
+        .btn-row { display: flex; flex-wrap: wrap; gap: 5px; }
+
+        button {
+            padding: 5px 10px;
+            font-size: 11px;
+            font-family: inherit;
+            background: rgba(0,245,255,0.08);
+            border: 1px solid rgba(0,245,255,0.3);
+            color: #00f5ff;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        button:hover  { background: rgba(0,245,255,0.2); box-shadow: 0 0 8px rgba(0,245,255,0.3); }
+        button.active { background: rgba(0,245,255,0.35); border-color: #00f5ff; color: #fff; }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #00f5ff;
+            margin: 4px 0;
+        }
+
+        .slider-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+        .slider-row span { min-width: 28px; text-align: right; color: #00ff9d; }
+
+        select {
+            width: 100%;
+            padding: 5px;
+            background: rgba(0,10,18,0.9);
+            border: 1px solid rgba(0,245,255,0.3);
+            color: #00f5ff;
+            font-family: inherit;
+            font-size: 11px;
+            border-radius: 4px;
+        }
+
+        /* ── Status bar ──────────────────────────────────────────── */
+        #status-bar {
+            position: fixed;
+            bottom: 18px;
+            left: 18px;
+            background: rgba(0,10,18,0.85);
+            border: 1px solid rgba(0,245,255,0.25);
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 11px;
+            z-index: 100;
+            backdrop-filter: blur(6px);
+            line-height: 1.7;
+        }
+        #status-bar .k { color: rgba(0,245,255,0.55); }
+        #status-bar .v { color: #00ff9d; font-weight: bold; }
+
+        #particle-count {
+            position: fixed;
+            bottom: 18px;
+            right: 18px;
+            font-size: 10px;
+            color: rgba(0,245,255,0.35);
+            letter-spacing: 1px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+<div id="avatar-layer"></div>
+
+<div id="controls">
+    <h2>⚡ AI Guardian Test</h2>
+
+    <!-- Activity -->
+    <div class="section">
+        <label>Activity</label>
+        <div class="btn-row" id="activity-btns">
+            <button onclick="setAct('idle')"        class="active">Idle</button>
+            <button onclick="setAct('listening')"              >Listen</button>
+            <button onclick="setAct('thinking')"               >Think</button>
+            <button onclick="setAct('speaking')"               >Speak</button>
+            <button onclick="setAct('alert')"                  >Alert</button>
+        </div>
+    </div>
+
+    <!-- Palette -->
+    <div class="section">
+        <label>Palette</label>
+        <div class="btn-row" id="palette-btns">
+            <button onclick="setPal('cyan')"         class="active">Cyan</button>
+            <button onclick="setPal('matrix')"                     >Matrix</button>
+            <button onclick="setPal('amber')"                      >Amber</button>
+            <button onclick="setPal('cyber-magenta')"              >Magenta</button>
+            <button onclick="setPal('red')"                        >Red</button>
+        </div>
+    </div>
+
+    <!-- Volume (simulates microphone / TTS) -->
+    <div class="section">
+        <label>Volume / Lipsync</label>
+        <div class="slider-row">
+            <input type="range" id="vol-slider" min="0" max="100" value="0"
+                   oninput="setVol(this.value)">
+            <span id="vol-val">0</span>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+            <button onclick="simulateSpeak()">▶ Simulate Speech</button>
+            <button onclick="stopSpeak()">■ Stop</button>
+        </div>
+    </div>
+
+    <!-- Expression sliders -->
+    <div class="section">
+        <label>Expressions</label>
+
+        <div class="slider-row">
+            <span style="min-width:52px;color:rgba(0,245,255,0.6)">Smile</span>
+            <input type="range" id="smile" min="0" max="100" value="0"
+                   oninput="updateCust()">
+            <span id="smile-val">0</span>
+        </div>
+        <div class="slider-row">
+            <span style="min-width:52px;color:rgba(0,245,255,0.6)">Frown</span>
+            <input type="range" id="frown" min="0" max="100" value="0"
+                   oninput="updateCust()">
+            <span id="frown-val">0</span>
+        </div>
+        <div class="slider-row">
+            <span style="min-width:52px;color:rgba(0,245,255,0.6)">Surprise</span>
+            <input type="range" id="surprise" min="0" max="100" value="0"
+                   oninput="updateCust()">
+            <span id="surprise-val">0</span>
+        </div>
+        <div class="slider-row">
+            <span style="min-width:52px;color:rgba(0,245,255,0.6)">Wink</span>
+            <input type="range" id="wink" min="0" max="100" value="0"
+                   oninput="updateCust()">
+            <span id="wink-val">0</span>
+        </div>
+        <div class="slider-row">
+            <span style="min-width:52px;color:rgba(0,245,255,0.6)">Viseme</span>
+            <input type="range" id="viseme" min="0" max="100" value="50"
+                   oninput="updateCust()">
+            <span id="viseme-val">50</span>
+        </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="section">
+        <label>Presets</label>
+        <div class="btn-row">
+            <button onclick="preset('greeting')">👋 Greeting</button>
+            <button onclick="preset('alert')">⚠ Alert</button>
+            <button onclick="preset('think')">🤔 Analyze</button>
+            <button onclick="preset('success')">✅ Success</button>
+        </div>
+    </div>
+</div>
+
+<div id="status-bar">
+    <span class="k">Activity : </span><span class="v" id="s-act">idle</span><br>
+    <span class="k">Volume   : </span><span class="v" id="s-vol">0.00</span><br>
+    <span class="k">Palette  : </span><span class="v" id="s-pal">cyan</span><br>
+    <span class="k">State    : </span><span class="v" id="s-state">Initializing…</span>
+</div>
+
+<div id="particle-count" id="s-particles"></div>
+
+<script type="module">
+import { AIGuardianRenderer } from './web/ai-guardian-renderer.js';
+
+// ── Boot renderer ─────────────────────────────────────────────────────────────
+const container = document.getElementById('avatar-layer');
+const renderer  = new AIGuardianRenderer(container, {
+    colorPalette:    'cyan',
+    enableBloom:     true,
+    enableHoloScan:  true,
+});
+
+window._renderer = renderer;   // expose for console debugging
+
+// Wait for particles to appear then update status
+let checkInterval = setInterval(() => {
+    if (renderer.points) {
+        const n = renderer.points.geometry.attributes.position.count;
+        document.getElementById('particle-count').textContent =
+            n.toLocaleString() + ' particles';
+        document.getElementById('s-state').textContent = 'Ready — ' + n.toLocaleString() + ' particles';
+        clearInterval(checkInterval);
+    }
+}, 200);
+
+// ── Activity buttons ──────────────────────────────────────────────────────────
+window.setAct = function(act) {
+    renderer.setActivity(act);
+    document.getElementById('s-act').textContent = act;
+    document.querySelectorAll('#activity-btns button').forEach(b => {
+        b.classList.toggle('active', b.textContent.toLowerCase().startsWith(act.slice(0,4)));
+    });
+};
+
+// ── Palette buttons ───────────────────────────────────────────────────────────
+window.setPal = function(pal) {
+    renderer.setColorPalette(pal);
+    document.getElementById('s-pal').textContent = pal;
+    document.querySelectorAll('#palette-btns button').forEach(b => {
+        b.classList.toggle('active', b.textContent.toLowerCase() === pal ||
+                                     b.textContent.toLowerCase().includes(pal.slice(0,4)));
+    });
+};
+
+// ── Volume ────────────────────────────────────────────────────────────────────
+window.setVol = function(v) {
+    const vol = v / 100;
+    renderer.setVolume(vol);
+    document.getElementById('vol-val').textContent = v;
+    document.getElementById('s-vol').textContent   = vol.toFixed(2);
+};
+
+// ── Expression sliders ────────────────────────────────────────────────────────
+window.updateCust = function() {
+    const g = id => parseFloat(document.getElementById(id).value) / 100;
+    ['smile','frown','surprise','wink','viseme'].forEach(k => {
+        document.getElementById(k + '-val').textContent =
+            document.getElementById(k).value;
+    });
+    renderer.setCustomization({
+        smile:    g('smile'),
+        frown:    g('frown'),
+        surprise: g('surprise'),
+        wink:     g('wink'),
+        viseme:   g('viseme'),
+    });
+};
+
+// ── Simulate speech (animate volume) ─────────────────────────────────────────
+let speakTimer = null;
+let speakPhase = 0;
+
+window.simulateSpeak = function() {
+    renderer.setActivity('speaking');
+    document.getElementById('s-act').textContent = 'speaking';
+    clearInterval(speakTimer);
+    speakPhase = 0;
+    speakTimer = setInterval(() => {
+        speakPhase += 0.19;
+        const vol = Math.abs(Math.sin(speakPhase * 0.88)) * 0.75 + 0.05;
+        renderer.setVolume(vol);
+        const pct = Math.round(vol * 100);
+        document.getElementById('vol-slider').value     = pct;
+        document.getElementById('vol-val').textContent  = pct;
+        document.getElementById('s-vol').textContent    = vol.toFixed(2);
+    }, 50);
+};
+
+window.stopSpeak = function() {
+    clearInterval(speakTimer);
+    renderer.setVolume(0);
+    renderer.setActivity('idle');
+    document.getElementById('vol-slider').value    = 0;
+    document.getElementById('vol-val').textContent = 0;
+    document.getElementById('s-vol').textContent   = '0.00';
+    document.getElementById('s-act').textContent   = 'idle';
+};
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+window.preset = function(name) {
+    stopSpeak();
+    if (name === 'greeting') {
+        renderer.setActivity('listening');
+        renderer.setCustomization({ smile: 0.6, frown: 0, surprise: 0.2 });
+        document.getElementById('s-act').textContent = 'listening';
+        setTimeout(() => { simulateSpeak(); }, 600);
+
+    } else if (name === 'alert') {
+        renderer.setActivity('alert');
+        renderer.setCustomization({ smile: 0, frown: 0.5, surprise: 0.7 });
+        document.getElementById('s-act').textContent = 'alert';
+        setTimeout(() => {
+            renderer.setActivity('idle');
+            renderer.setCustomization({ smile: 0, frown: 0, surprise: 0 });
+            document.getElementById('s-act').textContent = 'idle';
+        }, 3000);
+
+    } else if (name === 'think') {
+        renderer.setActivity('thinking');
+        renderer.setCustomization({ smile: 0, frown: 0.2, surprise: 0 });
+        document.getElementById('s-act').textContent = 'thinking';
+
+    } else if (name === 'success') {
+        renderer.setActivity('speaking');
+        renderer.setCustomization({ smile: 0.8, frown: 0, surprise: 0.3 });
+        document.getElementById('s-act').textContent = 'speaking';
+        simulateSpeak();
+        setTimeout(stopSpeak, 2500);
+    }
+
+    // Sync slider displays
+    const c = renderer.getCustomization();
+    ['smile','frown','surprise','wink'].forEach(k => {
+        const pct = Math.round((c[k] || 0) * 100);
+        document.getElementById(k).value              = pct;
+        document.getElementById(k + '-val').textContent = pct;
+    });
+};
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    const map = { '1':'idle','2':'listening','3':'thinking','4':'speaking','5':'alert' };
+    if (map[e.key]) setAct(map[e.key]);
+    if (e.key === ' ') { e.preventDefault(); simulateSpeak(); }
+    if (e.key === 'Escape') stopSpeak();
+});
+</script>
+</body>
+</html>

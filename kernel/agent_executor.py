@@ -116,6 +116,25 @@ def _extract_command(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     return {}
 
 
+def _extract_terminal_command(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
+    """Extract a shell command and optional session name for run_in_terminal."""
+    ctx: Dict[str, Any] = {}
+    # "run <cmd> in terminal [session <name>]"
+    # "run <cmd> in background [as <name>]"
+    cmd_match = re.search(
+        r'(?:run|execute|start|launch)\s+(?:command\s+)?["\']?(.+?)["\']?'
+        r'(?:\s+in\s+(?:the\s+)?(?:terminal|background|a\s+session))?'
+        r'(?:\s+(?:as|named?|session)\s+["\']?(\S+)["\']?)?'
+        r'\s*$',
+        text, re.I,
+    )
+    if cmd_match:
+        ctx["command"] = cmd_match.group(1).strip().rstrip(".")
+        if cmd_match.group(2):
+            ctx["session_name"] = cmd_match.group(2).strip()
+    return ctx
+
+
 def _extract_compat(_m: "re.Match[str]", text: str) -> Dict[str, Any]:
     c = re.search(r'(?:compatib\w+|compat)\s+(?:of|for|with|check)?\s*(.+)', text, re.I)
     if c:
@@ -220,9 +239,36 @@ INTENTS: List[IntentPattern] = [
         re.compile(r'\b(?:process(?:es)?|top|htop|task\s*manager|running|what\'?s?\s+running)\b', re.I),
         "list_processes", None, "List running processes",
     ),
-    # Run shell command
+    # Terminal — open / show (checked before run_command so "open terminal" wins)
     IntentPattern(
-        re.compile(r'\b(?:run|execute|shell|terminal|command)\b.*["\']', re.I),
+        re.compile(r'\b(?:open|show|launch|toggle)\b.*\bterminal\b', re.I),
+        "open_terminal", None, "Open the embedded terminal",
+    ),
+    IntentPattern(
+        re.compile(r'\bterminal\b(?!\s+session\s+list)', re.I),
+        "open_terminal", None, "Open the embedded terminal",
+    ),
+    # Terminal — list sessions
+    IntentPattern(
+        re.compile(r'\b(?:list|show)\b.*\bterminal\s+sessions?\b', re.I),
+        "list_terminal_sessions", None, "List terminal sessions",
+    ),
+    # Terminal — run command in background / persistent session
+    IntentPattern(
+        re.compile(
+            r'\b(?:run|execute|start|launch)\b.+\b(?:in\s+(?:the\s+)?(?:terminal|background)|'
+            r'background(?:ly)?|persistent(?:ly)?|long[-\s]?running)\b',
+            re.I,
+        ),
+        "run_in_terminal", _extract_terminal_command, "Run command in terminal session",
+    ),
+    IntentPattern(
+        re.compile(r'\bterminal\s+(?:session\s+)?run\b', re.I),
+        "run_in_terminal", _extract_terminal_command, "Run command in terminal session",
+    ),
+    # Run shell command (quoted) — kept after terminal patterns
+    IntentPattern(
+        re.compile(r'\b(?:run|execute|shell|command)\b.*["\']', re.I),
         "run_command", _extract_command, "Run a shell command",
     ),
 ]
@@ -330,6 +376,9 @@ class AgentExecutor:
             "List and monitor running processes",
             "Execute shell commands",
             "Open the system file manager",
+            "Open the embedded terminal for interactive shell access",
+            "Run long-running commands in persistent terminal sessions",
+            "List and manage active terminal sessions",
         ]
 
     def get_help_text(self) -> str:

@@ -18,6 +18,9 @@ class VoiceInputController {
       autoStart: options.autoStart || false,
       autoSleep: options.autoSleep !== false,
       sleepTimeout: options.sleepTimeout || 30000,
+      silenceTimeout: options.silenceTimeout || 2000, // 2 seconds of silence to auto-stop
+      enableSilenceDetection: options.enableSilenceDetection !== false,
+      autoStopOnSilence: options.autoStopOnSilence !== false,
       ...options
     };
 
@@ -33,10 +36,17 @@ class VoiceInputController {
     this.currentTranscript = '';
     this.finalTranscript = '';
     this.lastCommandTime = null;
+    this.isSpeaking = false;
+    this.manuallyEnabled = false;
     
     // Recognition instance
     this.recognition = null;
     this.recognitionSupported = false;
+
+    // Timers
+    this.sleepTimer = null;
+    this.conversationTimer = null;
+    this.silenceTimer = null;
 
     // Callbacks
     this.onTranscript = options.onTranscript || (() => {});
@@ -47,6 +57,9 @@ class VoiceInputController {
     this.onStateChange = options.onStateChange || (() => {});
     this.onConversationStart = options.onConversationStart || (() => {});
     this.onConversationEnd = options.onConversationEnd || (() => {});
+    this.onSilenceDetected = options.onSilenceDetected || (() => {});
+    this.onMicrophoneStart = options.onMicrophoneStart || (() => {});
+    this.onMicrophoneStop = options.onMicrophoneStop || (() => {});
 
     // Avatar reference (will be set externally)
     this.avatar = null;
@@ -168,12 +181,20 @@ class VoiceInputController {
     // Speech start
     this.recognition.onspeechstart = () => {
       console.log('[Voice] Speech detected');
+      this.isSpeaking = true;
+      this.resetSilenceTimer();
       this.updateAvatarState('processing');
     };
 
     // Speech end
     this.recognition.onspeechend = () => {
       console.log('[Voice] Speech ended');
+      this.isSpeaking = false;
+      
+      // Start silence timer if auto-stop is enabled
+      if (this.options.autoStopOnSilence) {
+        this.startSilenceTimer();
+      }
     };
   }
 
@@ -346,6 +367,31 @@ class VoiceInputController {
     this.onSleep();
   }
 
+  resetSilenceTimer() {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
+  startSilenceTimer() {
+    this.resetSilenceTimer();
+    
+    if (!this.options.enableSilenceDetection) {
+      return;
+    }
+
+    this.silenceTimer = setTimeout(() => {
+      console.log('[Voice] Silence detected - auto-stopping microphone');
+      this.onSilenceDetected();
+      
+      // Auto-stop microphone if user is not manually holding it active
+      if (!this.manuallyEnabled && this.isListening) {
+        this.stop();
+      }
+    }, this.options.silenceTimeout);
+  }
+
   resetSleepTimer() {
     if (!this.options.autoSleep) return;
     
@@ -359,7 +405,7 @@ class VoiceInputController {
     }, this.options.sleepTimeout);
   }
 
-  start() {
+  start(manual = false) {
     if (!this.recognitionSupported) {
       console.warn('[Voice] Cannot start - not supported');
       return false;
@@ -371,8 +417,10 @@ class VoiceInputController {
     }
 
     try {
-      console.log('[Voice] Starting recognition...');
+      console.log('[Voice] Starting recognition...', manual ? '(manual)' : '(auto)');
+      this.manuallyEnabled = manual;
       this.recognition.start();
+      this.onMicrophoneStart();
       return true;
     } catch (error) {
       console.error('[Voice] Failed to start:', error);
@@ -393,7 +441,11 @@ class VoiceInputController {
       console.log('[Voice] Stopping recognition...');
       this.recognition.stop();
       this.isListening = false;
+      this.manuallyEnabled = false;
+      this.isSpeaking = false;
+      this.resetSilenceTimer();
       this.updateState('stopped');
+      this.onMicrophoneStop();
     } catch (error) {
       console.error('[Voice] Failed to stop:', error);
     }
@@ -403,8 +455,32 @@ class VoiceInputController {
     if (this.isListening) {
       this.stop();
     } else {
-      this.start();
+      this.start(true); // Manual toggle
     }
+    return this.isListening;
+  }
+
+  enableMicrophone() {
+    return this.start(true);
+  }
+
+  disableMicrophone() {
+    this.stop();
+    return !this.isListening;
+  }
+
+  isMicrophoneActive() {
+    return this.isListening;
+  }
+
+  setSilenceDetection(enabled) {
+    this.options.enableSilenceDetection = enabled;
+    console.log('[Voice] Silence detection:', enabled ? 'enabled' : 'disabled');
+  }
+
+  setAutoStopOnSilence(enabled) {
+    this.options.autoStopOnSilence = enabled;
+    console.log('[Voice] Auto-stop on silence:', enabled ? 'enabled' : 'disabled');
   }
 
   updateState(state) {
@@ -477,6 +553,10 @@ class VoiceInputController {
     
     if (this.conversationTimer) {
       clearTimeout(this.conversationTimer);
+    }
+
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
     }
 
     if (this.recognition) {

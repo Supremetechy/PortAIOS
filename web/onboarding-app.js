@@ -130,6 +130,26 @@ function startTelemetryLoop() {
 async function initAvatar() {
   elements.avatarStatusText.textContent = 'Initializing';
   try {
+    // Wait for AI Guardian 3D from onboarding-guardian.js
+    console.log('[Onboarding] Waiting for AI Guardian 3D...');
+    let attempts = 0;
+    while (!window.AIOS?.guardian && attempts < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+    
+    if (window.AIOS?.guardian) {
+      console.log('[Onboarding] ✓ Using AI Guardian 3D avatar');
+      elements.avatarPlaceholder.style.display = 'none';
+      elements.avatarStatusText.textContent = 'Online';
+      elements.speechStatus.textContent = 'Ready';
+      // Set window.AIOS.avatar for backward compatibility
+      window.AIOS.avatar = window.AIOS.guardian;
+      return;
+    }
+    
+    // Fallback to binary avatar if Guardian fails
+    console.warn('[Onboarding] AI Guardian not available, using binary avatar fallback');
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     window.AIOS = window.AIOS || {};
     window.AIOS.avatar = new AvatarController(elements.binaryAvatarContainer, {

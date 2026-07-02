@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  minikernel:
+    build:
+      context: ../../..
+      dockerfile: minikernel/deploy/docker/Dockerfile
+    image: minikernel:latest
+    container_name: minikernel
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    
+    # Environment configuration
+    environment:
+      - MINIKERNEL_MODE=text
+      - MINIKERNEL_LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    
+    # Volumes for persistence
+    volumes:
+      - minikernel-data:/opt/minikernel/data
+      - minikernel-logs:/opt/minikernel/logs
+      - minikernel-models:/opt/minikernel/models
+    
+    # Interactive mode
+    stdin_open: true
+    tty: true
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Network
+    networks:
+      - minikernel-network
+    
+    # Command override (can be customized)
+    command: ["--mode", "text", "--confirmation", "text"]
+
+  # Optional: LLM inference service (separate container)
+  minikernel-llm:
+    build:
+      context: ../../..
+      dockerfile: minikernel/deploy/docker/Dockerfile.llm
+    image: minikernel-llm:latest
+    container_name: minikernel-llm
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+    
+    volumes:
+      - minikernel-models:/models
+    
+    networks:
+      - minikernel-network
+    
+    restart: unless-stopped
+    
+    profiles:
+      - llm  # Only start with: docker-compose --profile llm up
+
+volumes:
+  minikernel-data:
+    driver: local
+  minikernel-logs:
+    driver: local
+  minikernel-models:
+    driver: local
+
+networks:
+  minikernel-network:
+    driver: bridge

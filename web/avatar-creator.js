@@ -3,7 +3,7 @@
  * Handles UI interactions and backend communication for avatar generation
  */
 
-class AvatarCreatorController {
+export class AvatarCreatorController {
     constructor() {
         this.currentParams = {
             head_radius: 0.12,

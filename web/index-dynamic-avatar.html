@@ -1,686 +1,856 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIOS — Dynamic Neural Interface</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
-    <link rel="stylesheet" href="style.css">
-    <style>
-        /* Scrollable page overrides */
-        html, body {
-            overflow-y: auto !important;
-            overflow-x: hidden;
-            height: auto !important;
-            min-height: 100%;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIOS — Dynamic Neural Interface</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+  <style>
+    /* ── Reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100vw; height: 100vh; overflow: hidden;
+      background: #000a14; color: #00ffff;
+      font-family: 'Courier New', monospace;
+    }
 
-        #app {
-            height: auto !important;
-            min-height: 100vh;
-        }
+    /* ── OS Shell grid ────────────────────────────────────── */
+    .aios-shell {
+      display: grid;
+      grid-template-rows: 42px 1fr 68px 52px;
+      height: 100vh; width: 100vw;
+    }
 
-        /* Custom scrollbar styling */
-        body::-webkit-scrollbar {
-            width: 10px;
-        }
+    /* ── System bar ───────────────────────────────────────── */
+    .sys-bar {
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 20px;
+      background: rgba(0,10,20,.97);
+      border-bottom: 1px solid rgba(0,255,255,.18);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    .sys-logo   { font-size: .95em; font-weight: bold; letter-spacing: 3px; }
+    .sys-sep    { width: 1px; height: 18px; background: rgba(0,255,255,.18); flex-shrink: 0; }
+    .sys-badge  { display: flex; align-items: center; gap: 6px; font-size: .78em; }
+    .dot        { width: 7px; height: 7px; border-radius: 50%; background: #00ff88; animation: dotBlink 2s ease-in-out infinite; }
+    @keyframes dotBlink { 0%,100%{opacity:1} 50%{opacity:.2} }
+    .sys-mode-val { color: #00ffff; font-weight: bold; letter-spacing: 1px; }
+    .sys-info   { font-size: .76em; color: rgba(0,255,255,.55); }
+    .sys-info span { color: #00ffff; }
+    .sys-spacer { flex: 1; }
+    .sys-clock  { font-size: .9em; color: #00ffff; letter-spacing: 1px; }
 
-        body::-webkit-scrollbar-track {
-            background: rgba(0, 255, 255, 0.05);
-        }
+    /* ── Main area ────────────────────────────────────────── */
+    .main-area { position: relative; overflow: hidden; }
+    #avatar-container { position: absolute; inset: 0; }
 
-        body::-webkit-scrollbar-thumb {
-            background: rgba(0, 255, 255, 0.3);
-            border-radius: 5px;
-            border: 2px solid var(--bg-0);
-        }
+    /* ── Mini avatar pip ──────────────────────────────────── */
+    .mini-pip {
+      position: absolute; bottom: 14px; right: 14px;
+      width: 90px; height: 68px;
+      background: rgba(0,10,20,.92);
+      border: 1px solid rgba(0,255,255,.4);
+      border-radius: 8px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      cursor: pointer; z-index: 50;
+      opacity: 0; pointer-events: none;
+      transition: opacity .3s, transform .3s;
+      transform: translateY(10px);
+    }
+    .mini-pip.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .mini-pip:hover { background: rgba(0,255,255,.1); border-color: #00ffff; }
+    .mini-pip-icon  { font-size: 1.5em; animation: pipPulse 2s ease-in-out infinite; }
+    .mini-pip-label { font-size: .6em; color: rgba(0,255,255,.7); letter-spacing: 2px; }
+    @keyframes pipPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
 
-        body::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 255, 255, 0.5);
-        }
+    /* ── Dock ─────────────────────────────────────────────── */
+    .dock {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 0 16px;
+      background: rgba(0,10,20,.97);
+      border-top: 1px solid rgba(0,255,255,.15);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    .dock-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 16px; min-width: 76px;
+      background: rgba(0,255,255,.04);
+      border: 1px solid rgba(0,255,255,.18);
+      border-radius: 8px; color: #00ffff; cursor: pointer;
+      font-family: 'Courier New', monospace; font-size: .68em;
+      letter-spacing: 1px; transition: all .18s;
+    }
+    .dock-btn .icon { font-size: 1.5em; line-height: 1; }
+    .dock-btn:hover {
+      background: rgba(0,255,255,.12);
+      border-color: rgba(0,255,255,.5);
+      box-shadow: 0 0 14px rgba(0,255,255,.2);
+    }
+    .dock-btn.active {
+      background: rgba(0,255,255,.16);
+      border-color: #00ffff;
+      box-shadow: 0 0 18px rgba(0,255,255,.3);
+    }
 
-        /* Dynamic UI enhancements */
-        .glitch-text {
-            position: relative;
-            display: inline-block;
-            animation: glitch 2s infinite;
-        }
-        
-        @keyframes glitch {
-            0%, 100% { transform: translate(0); }
-            20% { transform: translate(-2px, 2px); }
-            40% { transform: translate(-2px, -2px); }
-            60% { transform: translate(2px, 2px); }
-            80% { transform: translate(2px, -2px); }
-        }
+    /* ── Voice bar ────────────────────────────────────────── */
+    .voice-bar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 20px;
+      background: rgba(0,0,0,.95);
+      border-top: 1px solid rgba(0,255,255,.1);
+    }
+    .mic-btn {
+      width: 34px; height: 34px; flex-shrink: 0;
+      border-radius: 50%;
+      background: rgba(0,255,255,.08);
+      border: 2px solid rgba(0,255,255,.5);
+      color: #00ffff; font-size: .95em;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all .2s;
+    }
+    .mic-btn:hover { background: rgba(0,255,255,.18); border-color: #00ffff; }
+    .mic-btn.listening {
+      background: rgba(0,255,255,.22);
+      border-color: #00ffff;
+      animation: micPulse 1s ease-in-out infinite;
+    }
+    @keyframes micPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(0,255,255,.35); }
+      50%      { box-shadow: 0 0 0 8px rgba(0,255,255,0); }
+    }
+    .voice-transcript {
+      flex: 1; min-height: 28px;
+      background: rgba(0,255,255,.03);
+      border: 1px solid rgba(0,255,255,.12);
+      border-radius: 4px; padding: 5px 12px;
+      color: rgba(0,255,255,.7); font-size: .82em;
+      display: flex; align-items: center; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis;
+    }
+    .voice-status { font-size: .72em; color: rgba(0,255,255,.45); white-space: nowrap; }
 
-        .file-item:hover {
-            animation: pulse 0.3s ease;
-        }
+    /* ── Scan lines ───────────────────────────────────────── */
+    .scanlines {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,.025) 2px, rgba(0,0,0,.025) 4px
+      );
+    }
 
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
+    /* ── Corner brackets ──────────────────────────────────── */
+    .cb {
+      position: fixed; width: 18px; height: 18px;
+      border-color: rgba(0,255,255,.25); border-style: solid;
+      pointer-events: none; z-index: 200;
+    }
+    .cb-tl { top: 50px; left:  8px; border-width: 2px 0 0 2px; }
+    .cb-tr { top: 50px; right: 8px; border-width: 2px 2px 0 0; }
+    .cb-bl { bottom: 128px; left:  8px; border-width: 0 0 2px 2px; }
+    .cb-br { bottom: 128px; right: 8px; border-width: 0 2px 2px 0; }
 
-        /* Transition effects */
-        .mode-transition {
-            animation: fadeIn 0.8s ease;
-        }
+    /* ── Toast notifications ──────────────────────────────── */
+    .toast-wrap {
+      position: fixed; top: 52px; right: 16px;
+      display: flex; flex-direction: column; gap: 7px;
+      z-index: 300;
+    }
+    .toast {
+      background: rgba(0,10,20,.96);
+      border: 1px solid rgba(0,255,255,.35);
+      border-radius: 6px; padding: 9px 16px;
+      color: #00ffff; font-size: .82em; min-width: 200px;
+      animation: toastIn .25s ease;
+    }
+    @keyframes toastIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-        }
-
-        /* Voice command indicator */
-        .voice-indicator {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: rgba(0, 255, 255, 0.1);
-            border: 2px solid #00ffff;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5em;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            z-index: 1000;
-        }
-
-        .voice-indicator:hover {
-            background: rgba(0, 255, 255, 0.2);
-            transform: scale(1.1);
-        }
-
-        .voice-indicator.active {
-            animation: voicePulse 1s infinite;
-        }
-
-        @keyframes voicePulse {
-            0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.5); }
-            50% { box-shadow: 0 0 40px rgba(0, 255, 255, 0.8); }
-        }
-
-        .controls-container {
-            position: fixed;
-            top: 100px;
-            right: 30px;
-            width: 300px;
-            max-height: 70vh;
-            background: rgba(0, 255, 255, 0.05);
-            border: 1px solid rgba(0, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 20px;
-            overflow-y: auto;
-            z-index: 1000;
-        }
-
-        /* Mode indicator */
-        .mode-badge {
-            position: fixed;
-            top: 30px;
-            right: 30px;
-            background: rgba(0, 255, 255, 0.1);
-            border: 1px solid #00ffff;
-            padding: 8px 16px;
-            border-radius: 20px;
-            color: #00ffff;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85em;
-            z-index: 1000;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-        }
-
-        /* Scrollbar styling for UI modes */
-        .ui-mode-container::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .ui-mode-container::-webkit-scrollbar-track {
-            background: rgba(0, 255, 255, 0.05);
-        }
-
-        .ui-mode-container::-webkit-scrollbar-thumb {
-            background: rgba(0, 255, 255, 0.3);
-            border-radius: 4px;
-        }
-
-        .ui-mode-container::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 255, 255, 0.5);
-        }
-
-        /* Loading animation */
-        .loading-spinner {
-            border: 3px solid rgba(0, 255, 255, 0.1);
-            border-top: 3px solid #00ffff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        
-    </style>
+    /* ── Scrollbars ───────────────────────────────────────── */
+    ::-webkit-scrollbar       { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(0,255,255,.04); }
+    ::-webkit-scrollbar-thumb { background: rgba(0,255,255,.25); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,255,.4); }
+  </style>
 </head>
 <body>
 
-    <!-- Loading animation -->
-    <div class="loading-spinner" id="loading-spinner"></div>
+  <!-- Atmospheric overlays -->
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="cb cb-tl" aria-hidden="true"></div>
+  <div class="cb cb-tr" aria-hidden="true"></div>
+  <div class="cb cb-bl" aria-hidden="true"></div>
+  <div class="cb cb-br" aria-hidden="true"></div>
 
+  <!-- Toast container -->
+  <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
-    <!-- Corner brackets -->
-    <div class="corner-bracket cb-tl"></div>
-    <div class="corner-bracket cb-tr"></div>
-    <div class="corner-bracket cb-bl"></div>
-    <div class="corner-bracket cb-br"></div>
+  <!-- ── OS Shell ─────────────────────────────────────────── -->
+  <div class="aios-shell">
 
-    <!-- Background layers -->
-    <div class="bg-layer bg-grid"></div>
-    <div class="bg-layer bg-scan"></div>
-    <div class="bg-layer bg-vignette"></div>
+    <!-- System bar -->
+    <header class="sys-bar">
+      <span class="sys-logo">⚡ AIOS</span>
+      <div class="sys-sep"></div>
+      <div class="sys-badge">
+        <span class="dot"></span>
+        <span class="sys-mode-val" id="mode-label">AVATAR</span>
+      </div>
+      <div class="sys-sep"></div>
+      <div class="sys-info">SYS <span id="sys-status">ONLINE</span></div>
+      <div class="sys-spacer"></div>
+      <div class="sys-info">UP <span id="uptime">00:00:00</span></div>
+      <div class="sys-sep"></div>
+      <div class="sys-clock" id="sys-clock">--:--:--</div>
+      <div class="sys-sep"></div>
+      <button type="button" onclick="window.location.href='avatar-integration.html'" style="
+        background: rgba(0,255,255,.06); border: 1px solid rgba(0,255,255,.25);
+        color: rgba(0,255,255,.7); padding: 4px 12px; cursor: pointer;
+        font-family: 'Courier New', monospace; font-size: .72em;
+        border-radius: 4px; letter-spacing: 1px; white-space: nowrap;
+        transition: all .18s;
+      " onmouseover="this.style.background='rgba(0,255,255,.14)';this.style.borderColor='rgba(0,255,255,.5)'"
+         onmouseout="this.style.background='rgba(0,255,255,.06)';this.style.borderColor='rgba(0,255,255,.25)'"
+         title="Back to Avatar Integration" aria-label="Back to avatar integration">← Back</button>
+    </header>
 
-    <!-- Telemetry strip -->
-    <div class="telemetry">
-        <div class="tel-item"><span class="tel-dot"></span> AIOS</div>
-        <div class="tel-item"><span class="tel-dot"></span> DYNAMIC UI</div>
-        <div class="tel-item"><span class="tel-dot"></span> NEURAL INTERFACE</div>
+    <!-- Main content area — avatar lives here, modes overlay it -->
+    <main class="main-area">
+      <div id="avatar-container"></div>
+
+      <!-- Mini pip: click to return to avatar mode -->
+      <div class="mini-pip" id="mini-pip" title="Return to Avatar" onclick="switchToMode('avatar')" role="button" tabindex="0" aria-label="Return to avatar mode">
+        <span class="mini-pip-icon">⚡</span>
+        <span class="mini-pip-label">AVATAR</span>
+      </div>
+    </main>
+
+    <!-- Dock — always visible mode switcher -->
+    <nav class="dock" aria-label="Mode switcher">
+      <button type="button" class="dock-btn active" id="btn-avatar"    onclick="switchToMode('avatar')"    aria-label="Avatar mode">
+        <span class="icon">⚡</span>AVATAR
+      </button>
+      <button type="button" class="dock-btn"       id="btn-dashboard" onclick="switchToMode('dashboard')" aria-label="Dashboard">
+        <span class="icon">📊</span>DASH
+      </button>
+      <button type="button" class="dock-btn"       id="btn-desktop"   onclick="switchToMode('desktop')"   aria-label="File browser">
+        <span class="icon">📁</span>FILES
+      </button>
+      <button type="button" class="dock-btn"       id="btn-browser"   onclick="switchToMode('browser')"   aria-label="Web browser">
+        <span class="icon">🌐</span>BROWSER
+      </button>
+      <button type="button" class="dock-btn"       id="btn-terminal"  onclick="switchToMode('terminal')"  aria-label="Terminal">
+        <span class="icon">💻</span>TERMINAL
+      </button>
+      <button type="button" class="dock-btn"       id="btn-document"  onclick="switchToMode('document')"  aria-label="Documents">
+        <span class="icon">📄</span>DOCS
+      </button>
+      <button type="button" class="dock-btn" id="btn-games"
+              onclick="switchToMode('games')"
+              aria-label="AIOS Mini-Games" title="Launch AIOS Mini-Games"
+              style="border-color:rgba(255,0,255,.35);background:rgba(255,0,255,.05);">
+        <span class="icon">🎮</span>GAMES
+      </button>
+      <button type="button" class="dock-btn" id="btn-avatar-creator"
+              onclick="window.screenManager.openScreen('avatar-creator')"
+              aria-label="Avatar Creator" title="Create Custom Avatar">
+        <span class="icon">🤖</span>CREATOR
+      </button>
+      <button type="button" class="dock-btn" id="btn-test-suite"
+              onclick="window.screenManager.openScreen('test-suite')"
+              aria-label="Test Suite" title="Test Voice & Gestures">
+        <span class="icon">🧪</span>TESTS
+      </button>
+    </nav>
+
+    <!-- Voice bar — always visible -->
+    <div class="voice-bar" role="region" aria-label="Voice commands">
+      <button type="button" class="mic-btn" id="mic-btn" title='Click or say "hey aios"' aria-label="Toggle voice input">🎤</button>
+      <div class="voice-transcript" id="voice-transcript" aria-live="polite">
+        Say <strong>"hey aios"</strong> or click 🎤 — try "show files", "open browser", "dashboard"…
+      </div>
+      <span class="voice-status" id="voice-status">READY</span>
     </div>
 
-    <!-- Mode indicator -->
-    <div class="mode-badge" id="mode-badge">AVATAR MODE</div>
+  </div><!-- /.aios-shell -->
 
-    <!-- Voice command indicator -->
-    <div class="voice-indicator" id="voice-btn" title="Click to use voice commands">
-        🎤
-    </div>
+  <!-- Eel bridge (optional — graceful if absent) -->
+  <script type="text/javascript" src="/eel.js" onerror="window.__eelMissing=true"></script>
+  <script type="text/javascript" src="./confirmation-dialog.js"></script>
 
-    <div id="app">
-        <!-- Header -->
-        <header class="boot" style="--d:0.1s">
-            <div class="logo-box">
-                <div class="logo">AIOS</div>
-                <div class="subtitle">Autonomous Intelligence Operating System</div>
-            </div>
-            <div class="status-bar">
-                <div class="status-item">
-                    <span class="status-label">STATUS</span>
-                    <span class="status-value" id="system-status">ONLINE</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">MODE</span>
-                    <span class="status-value" id="ui-mode">AVATAR</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">UPTIME</span>
-                    <span class="status-value" id="uptime">00:00:00</span>
-                </div>
-            </div>
-        </header>
+  <!-- Screen Manager Styles -->
+  <link rel="stylesheet" href="/screen-styles.css">
 
-        <!-- Main layout -->
-        <main class="boot" style="--d:0.2s">
-            <!-- Avatar container -->
-            <div class="avatar-section boot" style="--d:0.25s">
-                <div id="avatar-container" style="position: relative; width: 200%; height: 820px;"></div>
-            </div>
+  <!-- OS Integration Components -->
+  <script src="/os-file-browser.js"></script>
+  <script src="/os-app-launcher.js"></script>
+  <script src="/os-browser.js"></script>
+  <script src="/os-system-tray.js"></script>
+  <script src="/os-integration-loader.js"></script>
+  
+  <script type="module">
+    import { BinaryAvatarRenderer } from './binary-avatar.js';
+    import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+    import { VoiceInputController } from './voice-input.js';
+    import { VoiceKeyboardController } from './voice-keyboard-controller.js';
+    import { screenManager } from './screen-manager.js';
+    import { createAvatarCreatorScreen, initAvatarCreator } from './screens/avatar-creator-screen.js';
+    import { createGamesScreen, initGamesScreen } from './screens/games-screen.js';
+    import { createTestSuiteScreen, initTestSuite } from './screens/test-suite-screen.js';
 
-            <!-- Controls -->
-            <div class="controls-container boot" style="--d:0.3s">
-                <div class="controls boot" style="--d:0.4s">
-                    <h3>Dynamic UI Controls</h3>
-                    <div class="control-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px;">
-                        <button class="ui-btn" onclick="window.dynamicUI?.showDesktop()">
-                            📁 Desktop
-                        </button>
-                        <button class="ui-btn" onclick="showSampleDocument()">
-                            📄 Document
-                        </button>
-                        <button class="ui-btn" onclick="showSampleMedia()">
-                            🖼️ Media
-                        </button>
-                        <button class="ui-btn" onclick="window.dynamicUI?.showTerminal()">
-                            💻 Terminal
-                        </button>
-                        <button class="ui-btn" onclick="window.dynamicUI?.showBrowser('https://aios.dev', '<h1>AIOS Documentation</h1>')">
-                            🌐 Browser
-                        </button>
-                        <button class="ui-btn" onclick="window.dynamicUI?.backToAvatar()">
-                            ⚡ Avatar
-                        </button>
-                    </div>
+    // ── State ──────────────────────────────────────────────
+    let avatar    = null;
+    let dynamicUI = null;
+    let voiceInput = null;
+    let voiceKeyboard = null;
+    let uptimeSec = 0;
+    let activeMode = 'avatar';
+    let currentPath = '~';
 
-                    <div style="margin-top: 20px;">
-                        <h4 style="color: #00ffff; margin-bottom: 10px;">Voice Commands</h4>
-                        <div style="color: #00ffff; opacity: 0.7; font-size: 0.9em; line-height: 1.6;">
-                            • "Show my files" - Open desktop view<br>
-                            • "Open terminal" - Launch terminal<br>
-                            • "Back to avatar" - Return to avatar mode<br>
-                            • "Show me [filename]" - Open a file
-                        </div>
-                    </div>
-                </div>
-            </div>
+    // ── Clock & uptime ─────────────────────────────────────
+    function pad(n) { return String(n).padStart(2, '0'); }
 
-            <!-- Notifications -->
-            <div class="divider boot" style="--d:0.45s">
-                <div class="notifications boot" style="--d:0.5s">
-                    <h3>System Notifications</h3>
-                    <div id="notifications-container"></div>
-                </div>
-            </div>
+    function updateClock() {
+      const el = document.getElementById('sys-clock');
+      if (el) el.textContent = new Date().toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    setInterval(() => {
+      uptimeSec++;
+      const h = Math.floor(uptimeSec / 3600);
+      const m = Math.floor((uptimeSec % 3600) / 60);
+      const s = uptimeSec % 60;
+      const el = document.getElementById('uptime');
+      if (el) el.textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+    }, 1000);
+
+    // ── Toast notifications ────────────────────────────────
+    function toast(msg, ms = 3200) {
+      const wrap = document.getElementById('toast-wrap');
+      if (!wrap) return;
+      const el = document.createElement('div');
+      el.className = 'toast';
+      el.textContent = msg;
+      wrap.appendChild(el);
+      setTimeout(() => el.remove(), ms);
+    }
+    window.toast = toast;
+
+    // ── Mode switching ─────────────────────────────────────
+    const MODE_LABELS = {
+      avatar: 'AVATAR', dashboard: 'DASHBOARD', desktop: 'FILES',
+      browser: 'BROWSER', terminal: 'TERMINAL', document: 'DOCS', media: 'MEDIA'
+    };
+
+    window.switchToMode = async function(mode, opts = {}) {
+      if (!dynamicUI) return;
+      activeMode = mode;
+
+      // Update dock active state
+      document.querySelectorAll('.dock-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById(`btn-${mode}`);
+      if (btn) btn.classList.add('active');
+
+      // Update mode label in sys bar
+      const modeEl = document.getElementById('mode-label');
+      if (modeEl) modeEl.textContent = MODE_LABELS[mode] || mode.toUpperCase();
+
+      // Mini pip visibility
+      const pip = document.getElementById('mini-pip');
+      if (pip) pip.classList.toggle('visible', mode !== 'avatar');
+
+      // Delegate to DynamicUIManager
+      switch (mode) {
+        case 'avatar':
+          dynamicUI.backToAvatar();
+          break;
+
+        case 'dashboard':
+          dynamicUI.showDashboard({
+            uptime:  document.getElementById('uptime')?.textContent,
+            history: window.__cmdHistory || [],
+          });
+          break;
+
+        case 'desktop': {
+          const files = await fetchFiles(opts.path || currentPath);
+          dynamicUI.showDesktop(files, currentPath);
+          break;
+        }
+
+        case 'browser':
+          dynamicUI.showBrowser(opts.url || 'about:blank');
+          if (opts.url) dynamicUI.navigateBrowser(opts.url);
+          break;
+
+        case 'terminal':
+          dynamicUI.showTerminal(opts.message || null, opts.clear !== false);
+          break;
+
+        case 'document':
+          dynamicUI.showDocument(opts.title || 'Document Viewer', opts.content || defaultDocContent());
+          break;
+
+        case 'media':
+          dynamicUI.showMedia(opts.type || 'image', opts.url || '', opts.title || 'Media');
+          break;
+
+        case 'games':
+          // Games handled by fullscreen screen manager
+          dynamicUI.backToAvatar(); // Keep avatar visible in background
+          await screenManager.openScreen('games');
+          break;
+      }
+    };
+
+    // ── File system helpers ────────────────────────────────
+    async function fetchFiles(path = null) {
+      if (typeof eel !== 'undefined') {
+        try {
+          const result = await eel.list_directory(path || '')();
+          currentPath = result?.path || path || '~';
+          return result?.files || [];
+        } catch {}
+      }
+      currentPath = path || '~';
+      return sampleFiles(path);
+    }
+
+    function sampleFiles(path) {
+      const home = [
+        { name: 'Desktop',    type: 'folder',   path: '~/Desktop' },
+        { name: 'Documents',  type: 'folder',   path: '~/Documents' },
+        { name: 'Downloads',  type: 'folder',   path: '~/Downloads' },
+        { name: 'Pictures',   type: 'folder',   path: '~/Pictures' },
+        { name: 'Music',      type: 'folder',   path: '~/Music' },
+        { name: 'Movies',     type: 'folder',   path: '~/Movies' },
+        { name: 'Projects',   type: 'folder',   path: '~/Projects' },
+        { name: 'PortAIOS',   type: 'folder',   path: '~/Desktop/PortAIOS' },
+        { name: 'README.md',  type: 'document', size: '4.2 KB' },
+        { name: 'config.json',type: 'code',     size: '1.1 KB' },
+        { name: 'avatar.png', type: 'image',    size: '312 KB', url: 'AIOSAvatarImg.png' },
+      ];
+      if (!path || path === '~' || path.endsWith('home')) return home;
+      return [
+        { name: '..', type: 'folder', path: '~' },
+        { name: 'example.txt',   type: 'document', size: '2.1 KB' },
+        { name: 'notes.md',      type: 'document', size: '8.4 KB' },
+        { name: 'screenshot.png',type: 'image',    size: '480 KB' },
+        { name: 'project',       type: 'folder',   path: path + '/project' },
+      ];
+    }
+
+    function defaultDocContent() {
+      return `
+        <div style="max-width:680px; margin:0 auto;">
+          <h1 style="color:#00ffff; margin-bottom:16px; font-size:1.3em; letter-spacing:2px;">AIOS DOCUMENT VIEWER</h1>
+          <p style="color:rgba(0,255,255,.7); line-height:1.8; margin-bottom:12px;">
+            Select a file from the Files browser to open it here, or say a voice command like
+            <em>"open readme"</em> to load a document.
+          </p>
+          <h2 style="color:#00ffff; font-size:1em; letter-spacing:2px; margin:20px 0 8px;">VOICE COMMANDS</h2>
+          <ul style="color:rgba(0,255,255,.7); line-height:2; padding-left:20px;">
+            <li><code style="color:#00ff88;">show my files</code> — open file browser</li>
+            <li><code style="color:#00ff88;">open browser</code> — launch web browser</li>
+            <li><code style="color:#00ff88;">go to github.com</code> — navigate to a URL</li>
+            <li><code style="color:#00ff88;">search artificial intelligence</code> — web search</li>
+            <li><code style="color:#00ff88;">open terminal</code> — launch terminal</li>
+            <li><code style="color:#00ff88;">show dashboard</code> — system overview</li>
+            <li><code style="color:#00ff88;">back to avatar</code> — return to avatar</li>
+          </ul>
         </div>
+      `;
+    }
 
-        </main>
+    // ── Voice command processing ───────────────────────────
+    window.__cmdHistory = [];
 
-        <!-- Signature -->
-        <div class="signature boot" style="--d:0.55s">
-            <p>Dynamic Neural Interface — Voice Activated UI Transformation</p>
-        </div>
-    </div>
+    function recordCommand(text) {
+      window.__cmdHistory = [text, ...(window.__cmdHistory).slice(0, 19)];
+      dynamicUI?.addCommandHistory(text);
+    }
 
-    <!-- Eel JavaScript bridge -->
-    <script type="text/javascript" src="/eel.js"></script>
+    async function processVoiceCommand(raw) {
+      const text  = raw.trim();
+      const lower = text.toLowerCase().replace(/^(?:hey aios|aios|computer)[,\s]*/i, '').trim();
 
-    
+      console.log('[Voice] Command:', text, '→ parsed:', lower);
+      recordCommand(text);
 
-    <!-- Binary Avatar and Dynamic UI System -->
-    <script type="module">
-        import { BinaryAvatarRenderer } from './binary-avatar.js';
-        import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+      // Try voice keyboard commands first (keyboard, annotation, dictation)
+      if (voiceKeyboard) {
+        const keyboardResult = await voiceKeyboard.processCommand(lower);
+        if (keyboardResult && keyboardResult.success) {
+          console.log('[Voice] Keyboard command handled:', keyboardResult.action);
+          toast(`Keyboard: ${keyboardResult.action}`);
+          return; // Command handled by keyboard controller
+        }
+      }
 
-        console.log('[AIOS] Initializing Dynamic Avatar Interface...');
-
-        let avatar = null;
-        let dynamicUI = null;
-        let uptime = 0;
-
-        // Initialize
-        async function init() {
-            const container = document.getElementById('avatar-container');
+      // Try system commands (shutdown, exit, restart, sleep, lock, etc.)
+      if (window.eel && window.eel.process_ui_voice_command) {
+        try {
+          const result = await eel.process_ui_voice_command(lower)();
+          if (result && result.action && result.action !== 'unknown') {
+            console.log('[Voice] System command handled:', result);
             
-            // Create binary avatar
-            avatar = new BinaryAvatarRenderer(container, {
-                palette: 'cyan',
-                particleCount: 8000,
-                showEnvironment: true
-            });
-
-            avatar.setState('initializing');
-            
-            // Create dynamic UI manager
-            dynamicUI = new DynamicUIManager(container, avatar, {
-                transitionDuration: 800,
-                enableParticleEffects: true
-            });
-
-            // Make globally available
-            window.dynamicUI = dynamicUI;
-            window.avatar = avatar;
-
-            // Listen for mode changes
-            window.addEventListener('dynamicui:modeChanged', (e) => {
-                const { from, to } = e.detail;
-                console.log(`[DynamicUI] Mode changed: ${from} → ${to}`);
-                updateModeIndicator(to);
-                
-                // Update avatar state based on mode
-                if (to === 'avatar') {
-                    avatar.setState('idle');
+            // Handle confirmation if needed
+            if (result.action === 'confirm_and_execute') {
+              const confirmMsg = result.confirmation_message || 'Are you sure?';
+              
+              // Use confirmation dialog if available
+              if (window.showConfirmation) {
+                const confirmed = await window.showConfirmation(confirmMsg, { speakMessage: true });
+                if (confirmed && result.command) {
+                  const execResult = await eel.execute_system_command(result.command, result.data || {})();
+                  if (execResult && execResult.speak) {
+                    toast(execResult.speak);
+                  }
+                  return;
                 } else {
-                    avatar.setState('background');
+                  toast('Cancelled');
+                  return;
                 }
-            });
-
-            // Listen for file clicks
-            window.addEventListener('dynamicui:fileClicked', (e) => {
-                console.log('[DynamicUI] File clicked:', e.detail);
-            });
-
-            // Set initial state
-            avatar.setState('idle');
-
-            console.log('[AIOS] Dynamic Avatar Interface ready!');
-
-            // Load sample files from backend if available
-            if (typeof eel !== 'undefined') {
-                try {
-                    const files = await eel.get_desktop_files()();
-                    console.log('[AIOS] Loaded files from backend:', files);
-                } catch (err) {
-                    console.log('[AIOS] Running without backend, using sample data');
-                }
-            }
-        }
-
-        function updateModeIndicator(mode) {
-            const badge = document.getElementById('mode-badge');
-            const statusValue = document.getElementById('ui-mode');
-            const modeText = mode.toUpperCase() + ' MODE';
-            
-            if (badge) badge.textContent = modeText;
-            if (statusValue) statusValue.textContent = mode.toUpperCase();
-        }
-
-        // Sample functions
-        window.showSampleDocument = async function() {
-            const sampleContent = `
-                <h1>AIOS Dynamic UI System</h1>
-                <h2>Overview</h2>
-                <p>The AIOS Dynamic UI System enables seamless transformation between the binary avatar and various UI modes.</p>
-                
-                <h2>Available Modes</h2>
-                <ul>
-                    <li><strong>Avatar Mode</strong> - Interactive 3D binary avatar</li>
-                    <li><strong>Desktop Mode</strong> - File browser and folder navigation</li>
-                    <li><strong>Document Mode</strong> - Text and PDF viewer</li>
-                    <li><strong>Media Mode</strong> - Image and video player</li>
-                    <li><strong>Terminal Mode</strong> - Command line interface</li>
-                    <li><strong>Browser Mode</strong> - Web content viewer</li>
-                </ul>
-
-                <h2>Voice Commands</h2>
-                <p>Control the interface using natural language:</p>
-                <ul>
-                    <li>"Show my files" - Opens desktop view</li>
-                    <li>"Open terminal" - Launches terminal</li>
-                    <li>"Back to avatar" - Returns to avatar mode</li>
-                    <li>"Show me [filename]" - Opens specific file</li>
-                </ul>
-
-                <h2>Features</h2>
-                <ul>
-                    <li>Smooth transitions with particle effects</li>
-                    <li>Voice-activated UI transformations</li>
-                    <li>File system integration</li>
-                    <li>Multi-modal content viewing</li>
-                    <li>Real-time avatar state synchronization</li>
-                </ul>
-            `;
-            
-            await dynamicUI.showDocument('AIOS Dynamic UI System', sampleContent);
-        };
-
-        window.showSampleMedia = async function() {
-            // Use a placeholder image
-            await dynamicUI.showMedia('image', 'AIOSAvatarImg.png', 'AIOS Avatar');
-        };
-
-        // Voice command handling
-        const voiceBtn = document.getElementById('voice-btn');
-        let recognition = null;
-
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
-
-            recognition.onstart = () => {
-                voiceBtn.classList.add('active');
-                console.log('[Voice] Listening...');
-            };
-
-            recognition.onend = () => {
-                voiceBtn.classList.remove('active');
-            };
-
-            recognition.onresult = async (event) => {
-                const text = event.results[0][0].transcript;
-                console.log('[Voice] Command:', text);
-                
-                // Process command
-                if (typeof eel !== 'undefined') {
-                    try {
-                        const result = await eel.process_ui_voice_command(text)();
-                        if (result) {
-                            await handleVoiceCommandResult(result);
-                        }
-                    } catch (err) {
-                        console.log('[Voice] Backend not available, using local processing');
-                        processVoiceCommandLocally(text);
+              } else {
+                // Fallback to browser confirm
+                if (confirm(confirmMsg)) {
+                  if (result.command) {
+                    const execResult = await eel.execute_system_command(result.command, result.data || {})();
+                    if (execResult && execResult.speak) {
+                      toast(execResult.speak);
                     }
-                } else {
-                    processVoiceCommandLocally(text);
+                  }
                 }
-            };
+                return;
+              }
+            }
+            
+            // Handle direct execution commands
+            if (result.action === 'execute_command' && result.command) {
+              const execResult = await eel.execute_system_command(result.command, result.data || {})();
+              if (execResult && execResult.speak) {
+                toast(execResult.speak);
+              } else if (execResult && execResult.message) {
+                toast(execResult.message);
+              }
+              return;
+            }
+            
+            // Command was recognized but may need other handling
+            if (result.message) {
+              toast(result.message);
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn('[Voice] System command check failed:', err);
+          // Fall through to local commands
+        }
+      }
 
-            voiceBtn.addEventListener('click', () => {
-                recognition.start();
-                voiceBtn.classList.add('active');
-            });
+      // ── File browser ───────────────────────────────────
+      if (/\b(file|files|folder|folders|desktop|file browser|browse files|show files|my files|open files)\b/.test(lower)) {
+        await switchToMode('desktop');
+        toast('File browser opened');
+        return;
+      }
+
+      // ── Browser ────────────────────────────────────────
+      const goTo   = lower.match(/(?:go to|navigate to|open|visit|browse to)\s+(\S+)/);
+      const search = lower.match(/(?:search(?:\s+for)?|look up|find)\s+(.+)/);
+
+      if (/\b(browser|web|internet|online)\b/.test(lower) || goTo || search) {
+        let url = 'about:blank';
+        if (goTo) {
+          const raw = goTo[1];
+          url = /^https?:\/\//i.test(raw) ? raw
+              : raw.includes('.') ? `https://${raw}`
+              : `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
+        } else if (search) {
+          url = `https://www.google.com/search?q=${encodeURIComponent(search[1])}`;
+        }
+        await switchToMode('browser', { url });
+        if (url !== 'about:blank') toast(`Navigating to ${url.slice(0, 40)}…`);
+        return;
+      }
+
+      // ── Terminal ───────────────────────────────────────
+      if (/\b(terminal|command|shell|cmd|cli|command line)\b/.test(lower)) {
+        await switchToMode('terminal');
+        toast('Terminal opened');
+        return;
+      }
+
+      // ── Dashboard ──────────────────────────────────────
+      if (/\b(dashboard|home|overview|stats|status|system|system status)\b/.test(lower)) {
+        await switchToMode('dashboard');
+        toast('Dashboard opened');
+        return;
+      }
+
+      // ── Document / Docs ────────────────────────────────
+      if (/\b(document|docs|readme|read|viewer|text|pdf)\b/.test(lower)) {
+        await switchToMode('document');
+        toast('Document viewer opened');
+        return;
+      }
+
+      // ── Games ──────────────────────────────────────────
+      if (/\b(game|games|play|arcade|mini.?game)\b/.test(lower)) {
+        await switchToMode('games');
+        toast('Launching AIOS Mini-Games…');
+        return;
+      }
+
+      // ── Avatar ─────────────────────────────────────────
+      if (/\b(avatar|back|return|home screen|neural|binary)\b/.test(lower)) {
+        await switchToMode('avatar');
+        toast('Back to avatar');
+        return;
+      }
+
+      // ── Speak / announce ───────────────────────────────
+      if (/\b(say|speak|announce|tell me|what is|what's)\b/.test(lower)) {
+        const phrase = lower.replace(/^(say|speak|announce|tell me)\s+/, '').replace(/^(what is|what's)\s+/, '');
+        speak(phrase);
+        toast(`Speaking: "${phrase.slice(0, 40)}"`);
+        return;
+      }
+
+      // ── Backend agent fallback ─────────────────────────
+      if (typeof eel !== 'undefined') {
+        try {
+          const result = await eel.agent_execute(text)();
+          if (result) {
+            const msg = typeof result === 'string' ? result : JSON.stringify(result);
+            toast(`AIOS: ${msg.slice(0, 80)}`);
+            speak(msg.slice(0, 150));
+            return;
+          }
+        } catch {}
+      }
+
+      toast(`Not recognised: "${text.slice(0, 40)}"`);
+      speak('Sorry, I did not understand that command.');
+    }
+
+    // ── Text-to-speech ─────────────────────────────────────
+    function speak(text) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.05; u.volume = 0.65;
+      speechSynthesis.speak(u);
+    }
+
+    // ── Speech recognition setup ───────────────────────────
+    function setupVoice() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const micBtn     = document.getElementById('mic-btn');
+      const transcript = document.getElementById('voice-transcript');
+      const statusEl   = document.getElementById('voice-status');
+
+      if (!SR) {
+        if (statusEl) statusEl.textContent = 'NO MIC';
+        return;
+      }
+
+      const recognition = new SR();
+      recognition.continuous     = true;
+      recognition.interimResults = true;
+      recognition.lang           = 'en-US';
+      recognition.maxAlternatives = 1;
+
+      let listening   = false;
+      let silTimer    = null;
+      let finalBuffer = '';
+
+      const setStatus = (s) => { if (statusEl) statusEl.textContent = s; };
+
+      recognition.onstart = () => {
+        listening = true;
+        micBtn?.classList.add('listening');
+        setStatus('LISTENING');
+        avatar?.setState('listening');
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        micBtn?.classList.remove('listening');
+        setStatus('READY');
+        avatar?.setState('idle');
+        // Auto-restart for continuous listening (unless manually stopped)
+        if (!recognition._manuallyStopped) {
+          try { recognition.start(); } catch {}
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        finalBuffer = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) finalBuffer += t;
+          else interim += t;
+        }
+
+        if (transcript) transcript.textContent = finalBuffer || interim || '…';
+
+        if (finalBuffer) {
+          clearTimeout(silTimer);
+          silTimer = setTimeout(async () => {
+            const cmd = finalBuffer.trim();
+            finalBuffer = '';
+            if (transcript) transcript.textContent = `Processing: ${cmd}`;
+            await processVoiceCommand(cmd);
+            if (transcript) transcript.textContent = 'Listening…';
+          }, 600);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+        console.warn('[Voice] Error:', event.error);
+        if (event.error === 'not-allowed') {
+          // Permission denied — stop auto-restart loop permanently until user clicks mic
+          recognition._manuallyStopped = true;
+          setStatus('NO MIC');
+          if (transcript) transcript.textContent = 'Microphone permission denied. Click mic to retry.';
+          return;
+        }
+        setStatus('ERR');
+        setTimeout(() => setStatus('READY'), 2000);
+      };
+
+      // Manual mic button toggle
+      micBtn?.addEventListener('click', () => {
+        if (listening) {
+          recognition._manuallyStopped = true;
+          recognition.stop();
+          setTimeout(() => { recognition._manuallyStopped = false; }, 500);
         } else {
-            voiceBtn.style.display = 'none';
-            console.log('[Voice] Speech recognition not supported');
+          recognition._manuallyStopped = false;
+          try { recognition.start(); } catch {}
         }
+      });
 
-        async function handleVoiceCommandResult(result) {
-            console.log('[Voice] Processing result:', result);
-            
-            if (result.action === 'switch_mode') {
-                await handleModeSwitch(result.mode, result.data);
-            } else if (result.action === 'execute_command') {
-                await executeSystemCommand(result.command, result.data);
-            } else if (result.action === 'request_input') {
-                alert(result.message);
-            }
-        }
-        
-        async function executeSystemCommand(command, data) {
-            console.log('[System] Executing command:', command, data);
-            
-            if (typeof eel !== 'undefined') {
-                try {
-                    const result = await eel.execute_system_command(command, data)();
-                    console.log('[System] Result:', result);
-                    
-                    // Show result in terminal
-                    if (result.message) {
-                        dynamicUI.showTerminal(result.message);
-                    }
-                    
-                    // Speak result if available
-                    if (result.speak && 'speechSynthesis' in window) {
-                        const utterance = new SpeechSynthesisUtterance(result.speak);
-                        speechSynthesis.speak(utterance);
-                    }
-                } catch (err) {
-                    console.error('[System] Command failed:', err);
-                    dynamicUI.showTerminal(`Error: ${err.message}`);
-                }
-            } else {
-                console.log('[System] Backend not available');
-                dynamicUI.showTerminal('Backend connection required for system commands');
-            }
-        }
+      // Auto-start continuous listening
+      recognition._manuallyStopped = false;
+      try { recognition.start(); } catch {}
+    }
 
-        function processVoiceCommandLocally(text) {
-            const lower = text.toLowerCase();
-            
-            if (lower.includes('show') && (lower.includes('files') || lower.includes('desktop'))) {
-                dynamicUI.showDesktop(getSampleFiles(), '/home');
-            } else if (lower.includes('terminal')) {
-                dynamicUI.showTerminal();
-            } else if (lower.includes('back') || lower.includes('avatar')) {
-                dynamicUI.backToAvatar();
-            } else if (lower.includes('document')) {
-                showSampleDocument();
-            } else if (lower.includes('media') || lower.includes('image')) {
-                showSampleMedia();
-            } else if (lower.includes('browser')) {
-                dynamicUI.showBrowser('about:blank');
-            } else if (lower.includes('network')) {
-                dynamicUI.showTerminal('Network status: Connected\nIP: 127.0.0.1');
-            } else if (lower.includes('battery')) {
-                dynamicUI.showTerminal('Battery status: Charging\nLevel: 100%');
-            } else if (lower.includes('camera')) {
-                dynamicUI.showTerminal('Camera status: Active\nResolution: 1920x1080');
-            } else if (lower.includes('microphone')) {
-                dynamicUI.showTerminal('Microphone status: Active');
-            } else if (lower.includes('speaker')) {
-                dynamicUI.showTerminal('Speaker status: Active');
-            } else if (lower.includes('status')) {
-                dynamicUI.showTerminal('System status: Online\nBackend: Not connected');
-            } else if (lower.includes('notification')) {
-                showNotifications();
-            } else {
-                dynamicUI.showTerminal(`Unrecognized command: "${text}"`);
-            } 
-        }
+    // ── Init ───────────────────────────────────────────────
+    async function init() {
+      const container = document.getElementById('avatar-container');
 
-        async function handleModeSwitch(mode, data) {
-            switch (mode) {
-                case 'desktop':
-                    if (typeof eel !== 'undefined' && !data.files) {
-                        const result = await eel.get_desktop_files(data.path)();
-                        dynamicUI.showDesktop(result.files, result.path);
-                    } else {
-                        dynamicUI.showDesktop(data.files || getSampleFiles(), data.path || '/home');
-                    }
-                    break;
-                case 'document':
-                    if (typeof eel !== 'undefined' && data.filename) {
-                        const result = await eel.get_document_content(data.filename)();
-                        dynamicUI.showDocument(result.title, result.content);
-                    } else {
-                        showSampleDocument();
-                    }
-                    break;
-                case 'media':
-                    dynamicUI.showMedia(data.type, data.url || data.filename, data.title);
-                    break;
-                case 'terminal':
-                    dynamicUI.showTerminal(data.message);
-                    break;
-                case 'browser':
-                    dynamicUI.showBrowser(data.url, data.content);
-                    break;
-                case 'notifications':
-                    await showNotifications();
-                    break;
-                case 'avatar':
-                    dynamicUI.backToAvatar();
-                    break;
-            }
-        }
-        
-        async function showNotifications() {
-            let notifications = [];
-            
-            if (typeof eel !== 'undefined') {
-                try {
-                    notifications = await eel.get_system_notifications()();
-                } catch (err) {
-                    console.log('[Notifications] Backend not available');
-                }
-            }
-            
-            // Add sample notifications if none available
-            if (notifications.length === 0) {
-                notifications = [
-                    {
-                        id: 'welcome',
-                        type: 'info',
-                        title: 'Welcome to AIOS',
-                        message: 'Dynamic Neural Interface Active',
-                        timestamp: 'now'
-                    },
-                    {
-                        id: 'voice',
-                        type: 'success',
-                        title: 'Voice Commands Ready',
-                        message: 'Click the microphone to use voice control',
-                        timestamp: '1 min ago'
-                    }
-                ];
-            }
-            
-            // Create notifications HTML
-            const notifHtml = `
-                <div style="padding: 20px;">
-                    <h2 style="color: #00ffff; margin-bottom: 20px;">Notifications</h2>
-                    ${notifications.map(n => `
-                        <div style="
-                            background: rgba(0, 255, 255, 0.05);
-                            border: 1px solid rgba(0, 255, 255, 0.2);
-                            padding: 15px;
-                            margin-bottom: 10px;
-                            border-radius: 4px;
-                        ">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <strong style="color: #00ffff;">${n.title}</strong>
-                                <span style="color: #00ffff88; font-size: 0.8em;">${n.timestamp}</span>
-                            </div>
-                            <p style="margin: 10px 0 0 0; color: #00ffff;">${n.message}</p>
-                        </div>
-                    `).join('')}
-                    <button onclick="window.clearNotifications()" style="
-                        background: rgba(0, 255, 255, 0.1);
-                        border: 1px solid #00ffff;
-                        color: #00ffff;
-                        padding: 10px 20px;
-                        cursor: pointer;
-                        font-family: 'Courier New', monospace;
-                        margin-top: 10px;
-                    ">Clear All</button>
-                </div>
-            `;
-            
-            dynamicUI.showDocument('System Notifications', notifHtml);
-        }
-        
-        window.clearNotifications = async function() {
-            if (typeof eel !== 'undefined') {
-                try {
-                    await eel.clear_system_notifications()();
-                } catch (err) {
-                    console.log('[Notifications] Backend not available');
-                }
-            }
-            dynamicUI.backToAvatar();
-        };
+      // Create binary avatar (fills the container)
+      avatar = new BinaryAvatarRenderer(container, {
+        palette:       'cyan',
+        particleCount: 8000,
+        showEnvironment: true
+      });
+      avatar.setState('initializing');
 
-        function getSampleFiles() {
-            return [
-                { name: 'Documents', type: 'folder', size: '' },
-                { name: 'Pictures', type: 'folder', size: '' },
-                { name: 'Videos', type: 'folder', size: '' },
-                { name: 'Projects', type: 'folder', size: '' },
-                { name: 'readme.txt', type: 'document', size: '2.4 KB' },
-                { name: 'aios_guide.md', type: 'document', size: '15.8 KB' },
-                { name: 'avatar.png', type: 'image', size: '256 KB', url: 'AIOSAvatarImg.png' },
-                { name: 'demo.mp4', type: 'video', size: '4.2 MB' },
-                { name: 'kernel.py', type: 'code', size: '8.1 KB' },
-                { name: 'config.json', type: 'code', size: '1.2 KB' },
-            ];
+      // Create DynamicUIManager (overlays on top of avatar inside the same container)
+      dynamicUI = new DynamicUIManager(container, avatar, {
+        transitionDuration:    700,
+        enableParticleEffects: true,
+        enableNativeDesktop:   false,
+      });
+      window.dynamicUI = dynamicUI;
+      window.avatar    = avatar;
+
+      // Listen for mode changes emitted by DynamicUIManager
+      window.addEventListener('dynamicui:modeChanged', ({ detail: { to } }) => {
+        activeMode = to;
+        document.querySelectorAll('.dock-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById(`btn-${to}`);
+        if (btn) btn.classList.add('active');
+        const modeEl = document.getElementById('mode-label');
+        if (modeEl) modeEl.textContent = MODE_LABELS[to] || to.toUpperCase();
+        const pip = document.getElementById('mini-pip');
+        if (pip) pip.classList.toggle('visible', to !== 'avatar');
+        avatar?.setState(to === 'avatar' ? 'idle' : 'background');
+      });
+
+      // Folder navigation from the file grid
+      window.addEventListener('dynamicui:navigateFolder', async ({ detail: file }) => {
+        if (!file.path || file.path === '..') {
+          const up = currentPath.replace(/\/[^/]+\/?$/, '') || '~';
+          const files = await fetchFiles(up);
+          dynamicUI.showDesktop(files, currentPath);
+        } else {
+          const files = await fetchFiles(file.path);
+          dynamicUI.showDesktop(files, currentPath);
         }
+      });
 
-        // Uptime counter
-        setInterval(() => {
-            uptime++;
-            const hours = Math.floor(uptime / 3600);
-            const minutes = Math.floor((uptime % 3600) / 60);
-            const seconds = uptime % 60;
-            const uptimeEl = document.getElementById('uptime');
-            if (uptimeEl) {
-                uptimeEl.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            }
-        }, 1000);
+      // Keyboard shortcut: Escape → back to avatar
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activeMode !== 'avatar') {
+          switchToMode('avatar');
+        }
+      });
 
-        // Initialize on load
-        init();
-    </script>
+      avatar.setState('idle');
+
+      // Voice setup - must be called first to initialize voiceInput
+      setupVoice();
+      
+      // Initialize voice keyboard controller after voice setup
+      // Note: setupVoice doesn't create voiceInput object in this page, so we'll create a standalone instance
+      voiceKeyboard = new VoiceKeyboardController(null, {
+        showVisualFeedback: true,
+        enableAnnotations: true,
+        enableDictation: true
+      });
+      window.voiceKeyboard = voiceKeyboard;
+      console.log('[AIOS] Voice keyboard commands initialized');
+
+      // Register screens with screen manager
+      screenManager.registerScreen('avatar-creator', {
+        type: 'modal',
+        title: '🤖 Avatar Creator Pro',
+        size: 'large',
+        content: createAvatarCreatorScreen,
+        onOpen: initAvatarCreator
+      });
+
+      screenManager.registerScreen('games', {
+        type: 'fullscreen',
+        title: '🎮 AIOS Mini-Games',
+        content: createGamesScreen,
+        onOpen: initGamesScreen
+      });
+
+      screenManager.registerScreen('test-suite', {
+        type: 'modal',
+        title: '🧪 Test Suite - Voice & Gesture UI',
+        size: 'large',
+        content: createTestSuiteScreen,
+        onOpen: initTestSuite
+      });
+
+      // Try to get backend status
+      if (typeof eel !== 'undefined') {
+        try {
+          const stats = await eel.get_system_stats()();
+          if (stats?.status) {
+            const el = document.getElementById('sys-status');
+            if (el) el.textContent = stats.status.toUpperCase();
+          }
+        } catch {}
+      }
+
+      toast('AIOS Dynamic Interface ready — voice active');
+      console.log('[AIOS] Native Dynamic Interface initialized');
+    }
+
+    init();
+  </script>
 </body>
 </html>

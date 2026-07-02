@@ -1,11 +1,10 @@
 
--- Ensure the microphone has a way to be turned off and stopped after user has stopped speaking
--- Attempt to make the dynamic Avatar change a native feature, it should display users dashboard, files, browser, etc within the display, while maintaining the ability to access users desktop, files, folders, apps, browser, etc from the voice command UI
+
 -- Need to clean up Files and Codebase to condense down to smallest possible shipping package size. 
 -- Need to ensure the avatar.glb file is reading and working and is visible on the screen, so the avatar is displaying correctly, with lipsync and facial expressions working
 -- create small sized onboarding videos for the onboarding process (these do not need to be shipped with OS can simply be on a website )
--- Need to ensure all voice commands work, all functions and features work, and that the OS is as secure from malware, viruses, malicious actors, etc as possible
--- Need to make a one point start entry point for the OS, that is the unified onboarding process, that is the unified websocket opening, etc. 
+-- Need to ensure all voice commands work, and that the OS is as secure from malware, viruses, malicious actors, etc as possible
+
 
 Ensuring AI-OS functions on most to all hardware.
 Architecture Types: x86, ARM, RISC‑V, MIPS, etc. Machine code and mnemonics differ, so binaries and source use ISA‑specific registers, instructions, and calling conventions.
@@ -26,17 +25,17 @@ Privilege/safety: High-level language features (type safety, stack management, p
 Tooling and developer productivity: Assembly is verbose and error prone; building, debugging, and maintaining large codebases (OS kernels, drivers) is vastly harder than using a higher‑level language. 
 How to achieve cross‑hardware support practically:
 
-    Recompile for each ISA: Keep most OS logic portable (written in C or another high‑level language) and only write small architecture‑specific layers in assembly (boot, context switch, interrupt entry, atomic primitives). This is the common approach.
+Recompile for each ISA: Keep most OS logic portable (written in C or another high‑level language) and only write small architecture‑specific layers in assembly (boot, context switch, interrupt entry, atomic primitives). This is the common approach.
 
-    Define stable hardware abstraction layers: Minimal portable kernel API + hardware abstraction layer (HAL) per platform isolates device/CPU specifics.
+Define stable hardware abstraction layers: Minimal portable kernel API + hardware abstraction layer (HAL) per platform isolates device/CPU specifics.
 
-    Use a virtual machine or microcode: Target a small virtual ISA (e.g., a hypervisor, JVM, or WebAssembly) implemented per hardware; OS code then runs on the VM rather than raw hardware.
+Use a virtual machine or microcode: Target a small virtual ISA (e.g., a hypervisor, JVM, or WebAssembly) implemented per hardware; OS code then runs on the VM rather than raw hardware.
 
-    Cross‑assembly and macros: Some projects share logic via assembler macros or generate assembly from a higher‑level description, but you still need per‑ISA output.
+Cross‑assembly and macros: Some projects share logic via assembler macros or generate assembly from a higher‑level description, but you still need per‑ISA output.
 
-    Use a cross compiler: Use a cross compiler to generate code for each target architecture.
+Use a cross compiler: Use a cross compiler to generate code for each target architecture.
 
-     curl -L 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus%20Visemes' -o models/avatar.glb
+curl -L 'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus%20Visemes' -o models/avatar.glb
 
 To collapse to a single three version, bump drei + fiber to a release that supports the
   post-LinearEncoding API — @react-three/drei@9.114.5 + @react-three/fiber@8.17.10 is a
@@ -85,3 +84,12 @@ http://localhost:8000/avatar-creator-pro.html
 •  ✅ Export/import sharing
 •  ✅ Professional UI
 •  ✅ Production-ready
+
+•  Changed from push-based updates to pure polling architecture
+•  Removed eel.avatar_generation_progress() WebSocket push from backend thread
+•  Frontend now polls get_avatar_generation_status() every 1 second
+
+Root Cause: The setupEventListeners() method was called late in the async init() method. If any async operation failed (like loading the 3D preview), the event listeners were never attached.
+
+from kernel.voice_assistant import VoiceOnboardingAssistant
+assistant = VoiceOnboardingAssistant()  # Initialize the assistant

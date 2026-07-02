@@ -11,7 +11,7 @@ import React, { useRef, useEffect, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
-import { PHONEME_TO_VISEME } from './phonemeMap.js';
+import { PHONEME_TO_VISEME, VISEME_FALLBACK_MAP } from './phonemeMap.js';
 //import { useAudio } from './Audio.jsx';
 //import { useGLTFModel } from './GLTF.jsx';
 //import { ARKit } from 'react-native-arkit';
@@ -39,7 +39,7 @@ function springStep(current, target, velocity, dt, halfLife = 0.045) {
   return [newPos, newVel];
 }
 
-function AvatarHead({ modelUrl, speechStream, emotion }) {
+function AvatarHead({ modelUrl, speechStream, emotion, customMorphs = {} }) {
   const { scene } = useGLTF(modelUrl);
   const headRef = useRef();
 
@@ -92,16 +92,37 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
     const audioT = speechStream.current.getCurrentTime();
 
     const targets = { ...(EMOTION_PRESETS[emotion] || {}) };
+    const smile = Math.max(0, Math.min(1, customMorphs.smile ?? 0));
+    const frown = Math.max(0, Math.min(1, customMorphs.frown ?? 0));
+    const surprise = Math.max(0, Math.min(1, customMorphs.surprise ?? 0));
+    const wink = Math.max(0, Math.min(1, customMorphs.wink ?? 0));
+    const visemeGain = 0.35 + Math.max(0, Math.min(1, customMorphs.viseme ?? 0.5)) * 1.3;
+
+    targets.mouthSmileLeft = Math.max(targets.mouthSmileLeft || 0, smile * 0.75);
+    targets.mouthSmileRight = Math.max(targets.mouthSmileRight || 0, smile * 0.75);
+    targets.mouthFrownLeft = Math.max(targets.mouthFrownLeft || 0, frown * 0.65);
+    targets.mouthFrownRight = Math.max(targets.mouthFrownRight || 0, frown * 0.65);
+    targets.browInnerUp = Math.max(targets.browInnerUp || 0, surprise * 0.8);
+    targets.eyeWideLeft = Math.max(targets.eyeWideLeft || 0, surprise * 0.55);
+    targets.eyeWideRight = Math.max(targets.eyeWideRight || 0, surprise * 0.55);
+    targets.jawOpen = Math.max(targets.jawOpen || 0, surprise * 0.35);
+    targets.eyeBlinkLeft = Math.max(targets.eyeBlinkLeft || 0, wink);
 
     if (audioT != null) {
       const kf = speechStream.current.getActiveVisemes(audioT);
       for (const { viseme, weight } of kf) {
-        targets[viseme] = (targets[viseme] || 0) + weight;
+        // Use fallback if viseme is missing from GLB
+        const targetViseme = VISEME_FALLBACK_MAP[viseme] || viseme;
+        targets[targetViseme] = (targets[targetViseme] || 0) + weight * visemeGain;
       }
-      const jawDrive = (targets['viseme_aa'] || 0) * 0.9
-                     + (targets['viseme_O']  || 0) * 0.7
-                     + (targets['viseme_E']  || 0) * 0.4;
-      targets['jawOpen'] = Math.min(1, jawDrive);
+      // Apply fallbacks for jaw drive calculation too
+      const viseme_aa = VISEME_FALLBACK_MAP['viseme_aa'] || 'viseme_aa';
+      const viseme_O = VISEME_FALLBACK_MAP['viseme_O'] || 'viseme_O';
+      const viseme_E = VISEME_FALLBACK_MAP['viseme_E'] || 'viseme_E';
+      const jawDrive = (targets[viseme_aa] || 0) * 0.9
+                     + (targets[viseme_O]  || 0) * 0.7
+                     + (targets[viseme_E]  || 0) * 0.4;
+      targets['jawOpen'] = Math.min(1, Math.max(targets.jawOpen || 0, jawDrive));
     }
 
     const now = performance.now();
@@ -146,7 +167,7 @@ function AvatarHead({ modelUrl, speechStream, emotion }) {
   });
 }
 
-export default function Avatar({ agentId, modelUrl, speechStream, emotion = 'neutral' }) {
+export default function Avatar({ agentId, modelUrl, speechStream, emotion = 'neutral', customMorphs = {} }) {
   return React.createElement(
     Canvas,
     {
@@ -159,7 +180,7 @@ export default function Avatar({ agentId, modelUrl, speechStream, emotion = 'neu
     React.createElement(
       Suspense,
       { fallback: null },
-      React.createElement(AvatarHead, { modelUrl, speechStream, emotion }),
+      React.createElement(AvatarHead, { modelUrl, speechStream, emotion, customMorphs }),
       React.createElement(Environment, { preset: 'studio' })
     )
   );

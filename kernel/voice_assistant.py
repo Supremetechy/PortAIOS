@@ -28,6 +28,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+# Try to import DeepGram integration
+try:
+    from kernel.deepgram_voice_integration import get_deepgram_integration, DEEPGRAM_AVAILABLE
+except ImportError:
+    DEEPGRAM_AVAILABLE = False
+    get_deepgram_integration = None
+
 
 # --- Backend capability probes ---------------------------------------------
 
@@ -482,6 +489,8 @@ class VoiceOnboardingAssistant:
     The assistant owns a TTS backend (for speaking prompts) and an STT backend
     (for capturing user commands). It walks users through the setup script,
     but is also usable as a general voice command entry point after boot.
+    
+    Now supports DeepGram unified voice agent as the primary option when available.
     """
 
     def __init__(
@@ -491,14 +500,38 @@ class VoiceOnboardingAssistant:
         stt_backend: Optional[STTBackend] = None,
         prefer_offline: bool = True,
         on_command: Optional[Callable[[str, str], None]] = None,
+        use_deepgram: bool = True,
     ) -> None:
         self.script = script or DEFAULT_SCRIPT
-        self.tts = tts_backend or self._select_tts(prefer_offline)
-        self.stt = stt_backend or self._select_stt()
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._on_command = on_command
         self._step_index = 0
+        
+        # DeepGram integration (primary voice agent)
+        self._use_deepgram = use_deepgram and DEEPGRAM_AVAILABLE
+        self._deepgram_integration = None
+        
+        # Try to initialize DeepGram if requested and available
+        if self._use_deepgram and get_deepgram_integration:
+            try:
+                self._deepgram_integration = get_deepgram_integration()
+                if self._deepgram_integration.is_available():
+                    print("🎤 Using DeepGram unified voice agent (STT + LLM + TTS)")
+                    # DeepGram handles voice interaction, so we don't need separate TTS/STT
+                    self.tts = None
+                    self.stt = None
+                    return
+                else:
+                    print("⚠️  DeepGram not available (missing API key), using fallback TTS/STT")
+                    self._use_deepgram = False
+            except Exception as e:
+                print(f"⚠️  DeepGram initialization failed: {e}")
+                self._use_deepgram = False
+        
+        # Fallback to traditional TTS/STT backends
+        self.tts = tts_backend or self._select_tts(prefer_offline)
+        self.stt = stt_backend or self._select_stt()
 
     # Backend selection ------------------------------------------------------
 
@@ -539,6 +572,36 @@ class VoiceOnboardingAssistant:
 
     def speak(self, text: str) -> None:
         with self._lock:
+            # Notify AI Guardian if available
+            try:
+                from kernel.ai_guardian_bridge import get_guardian_bridge
+                bridge = get_guardian_bridge()
+                
+                # Auto-detect emotion/gesture from text
+                text_lower = text.lower()
+                emotion = 'neutral'
+                gesture = 'none'
+                
+                if any(word in text_lower for word in ['great', 'excellent', 'perfect', 'success', 'complete']):
+                    emotion = 'happy'
+                elif any(word in text_lower for word in ['analyzing', 'processing', 'thinking', 'let me', 'checking']):
+                    emotion = 'thinking'
+                elif any(word in text_lower for word in ['wow', 'amazing', 'incredible']):
+                    emotion = 'surprised'
+                
+                if any(word in text_lower for word in ['hello', 'hi', 'welcome', 'greet']):
+                    gesture = 'wave'
+                elif any(word in text_lower for word in ['stop', 'wait', 'halt', 'hold on']):
+                    gesture = 'stop'
+                elif any(word in text_lower for word in ['look', 'see', 'there', 'this', 'here']):
+                    gesture = 'point'
+                elif any(word in text_lower for word in ['think', 'consider', 'analyze', 'hmm']):
+                    gesture = 'thinking'
+                
+                bridge.speak(text, emotion, gesture)
+            except Exception:
+                pass  # Guardian not available, continue normally
+            
             try:
                 self.tts.speak(text)
             except Exception as err:

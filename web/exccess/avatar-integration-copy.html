@@ -1,0 +1,3459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIOS — Johnny Mnemonic Neural Interface</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Syne+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Import Map: Resolves bare module specifiers (fixes MetaMask/SES compatibility).
+         Transitive peers (scheduler, jsx-runtime) must be mapped explicitly because
+         esm.sh's react-dom bundle re-imports them as bare specifiers.
+
+         three pinned to 0.157.0 (NOT 0.160) because @react-three/drei@9.92.0
+         imports the deprecated `LinearEncoding` symbol from three. That symbol
+         was removed in three r158 (replaced by colorSpace), so newer three
+         throws "SyntaxError: Importing binding name 'LinearEncoding' is not
+         found." The hardcoded `https://esm.sh/three@0.160.0` URLs in
+         binary-avatar.js / SpatialEnvironmentRenderer.js / avatar-3d-lipsync.js
+         bypass this importmap and stay on 0.160 — they're separate copies.
+
+         drei + fiber URLs use `?external=three,react,...` because esm.sh
+         normally INLINES dependency versions at bundle time — drei's compiled
+         output rewrites `import 'three'` to `https://esm.sh/v135/three@0.160.0/...`,
+         bypassing our importmap entirely and reintroducing the LinearEncoding
+         crash. ?external= makes esm.sh emit those imports as bare specifiers
+         instead, so the importmap actually owns three's version.
+
+         react-dom also uses `?external=react,scheduler` for the same reason:
+         without it, react-dom's bundle ships its OWN copy of react. Then drei
+         (loading react via importmap) and react-dom (loading react via its
+         inlined bundle) would each hold a separate React instance, and
+         createRoot() would fail with "TypeError: undefined is not an object
+         (evaluating 'D.S')" deep inside react-dom-client. Keep all React
+         consumers on the same instance by externalising both deps.
+
+         IMPORTANT: fiber and drei must also externalise `react-dom` (not just
+         react). fiber uses react-dom internally (createPortal etc.) — if not
+         externalised, fiber's bundle ships its own copy of react-dom, which
+         then holds a separate copy of react, which collides with the
+         importmap's react. Symptom: "Cannot read properties of undefined
+         (reading 'S')" during fiber's module evaluation, before createRoot
+         is even called. Full external list per package:
+           react-dom, react-dom/client    → external: react, scheduler
+           @react-three/fiber             → external: react, react-dom, three, scheduler
+           @react-three/drei              → external: react, react-dom, three, scheduler, @react-three/fiber
+         The result is one shared instance per package across the entire tree. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.157.0",   
+        
+        "react": "https://esm.sh/react@18.2.0",
+        "react/": "https://esm.sh/react@18.2.0/",
+        "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+        "react-dom": "https://esm.sh/react-dom@18.2.0?external=react,scheduler",
+        "react-dom/": "https://esm.sh/react-dom@18.2.0/",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client?external=react,scheduler",
+        "scheduler": "https://esm.sh/scheduler@0.23.0",
+        "scheduler/": "https://esm.sh/scheduler@0.23.0/",
+        "scheduler@0.23.0": "https://esm.sh/scheduler@0.23.0",
+        "scheduler@^0.23.0": "https://esm.sh/scheduler@0.23.0",
+        "scheduler@~0.23.0": "https://esm.sh/scheduler@0.23.0",
+        "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.0?external=react,react-dom,three,scheduler",
+        "@react-three/drei": "https://esm.sh/@react-three/drei@9.92.0?external=react,react-dom,three,@react-three/fiber,scheduler"
+      }
+    }
+    </script>
+    
+
+    
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --g0:       #00ff9d;
+            --g1:       #00e87d;
+            --g3:       #004d28;
+            --g4:       #001a0d;
+            --cyan:     #00f5ff;
+            --cyan-d:   #00b8c4;
+            --magenta:  #ff0080;
+            --mag-d:    #c40062;
+            --amber:    #ffc400;
+            --amber-d:  #b88900;
+            --red:      #ff1744;
+            --red-d:    #b2102f;
+            --white:    #e8fff4;
+            --bg:       #010608;
+            --holo-1:   rgba(0,245,255,0.12);
+            --holo-2:   rgba(0,255,157,0.08);
+            --holo-3:   rgba(255,0,128,0.06);
+            --card-bg:  rgba(1,14,9,0.72);
+            --card-border: rgba(0,255,157,0.18);
+            --font-display: 'Orbitron', monospace;
+            --font-mono:    'Share Tech Mono', 'Courier New', monospace;
+            --font-data:    'Syne Mono', monospace;
+        }
+
+        html, body {
+            height: 100%; overflow: hidden;
+            background: var(--bg);
+            color: var(--g0);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
+        }
+
+        /*
+         * ═══════════════════════════════════════════
+         *  FULL-SCREEN LAYER STACK
+         *  z-index 1  →  #env-layer       (SpatialEnvironmentRenderer — opaque WebGL canvas)
+         *  z-index 2  →  #avatar-layer    (BinaryAvatarRenderer — alpha:true WebGL canvas)
+         *  z-index 4  →  .edge-vignette
+         *  z-index 5  →  .scanline-overlay
+         *  z-index 10 →  .hud             (panels, speech bubble)
+         *  z-index 15 →  .corner-bracket
+         *  z-index 20 →  #top-bar / #bottom-bar
+         * ═══════════════════════════════════════════
+         */
+
+        #env-layer,
+        #avatar-layer {
+            position: fixed;
+            inset: 0;
+            /* canvas injected by Three.js fills 100%×100% of this container */
+        }
+
+        #avatar-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Opaque — owns the background colour */
+        #env-layer {
+            z-index: 1;
+        }
+
+        /* Transparent — binary head floats over the environment */
+        #avatar-layer {
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Three.js injects a <canvas>; make sure it fills the container */
+        #env-layer canvas,
+        #avatar-layer canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* ─────────────────────────────────────────────
+           HUD BASE
+        ───────────────────────────────────────────── */
+        .hud { position: fixed; z-index: 10; pointer-events: none; }
+        .hud-interactive { pointer-events: auto; }
+
+        /* ─────────────────────────────────────────────
+           HOLOGRAPHIC CARD
+        ───────────────────────────────────────────── */
+        .holo-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        .holo-card::before {
+            content: '';
+            position: absolute; inset: 0; z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 40% at 20% 30%, var(--holo-1) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 70%, var(--holo-2) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 60% at 50% 10%, var(--holo-3) 0%, transparent 70%);
+            pointer-events: none;
+            animation: holo-drift 8s ease-in-out infinite alternate;
+        }
+        .holo-card::after {
+            content: '';
+            position: absolute; inset: 0; z-index: 1;
+            background: linear-gradient(
+                135deg,
+                transparent 0%, transparent 40%,
+                rgba(0,245,255,0.15) 45%,
+                rgba(0,255,157,0.22) 50%,
+                rgba(255,255,255,0.08) 52%,
+                transparent 57%, transparent 100%
+            );
+            background-size: 300% 300%;
+            animation: edge-shine 5s ease-in-out infinite;
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        .holo-card > * { position: relative; z-index: 2; }
+
+        @keyframes holo-drift {
+            0%   { opacity: 0.6; transform: translateX(-4px) translateY(-2px) scale(1.01); }
+            33%  { opacity: 0.9; }
+            66%  { opacity: 0.7; }
+            100% { opacity: 1.0; transform: translateX(4px) translateY(2px) scale(1); }
+        }
+        @keyframes edge-shine {
+            0%   { background-position: 200% 200%; opacity: 0.6; }
+            40%  { background-position: 100% 100%; opacity: 1; }
+            60%  { background-position: 0% 0%;     opacity: 0.8; }
+            100% { background-position: -100% -100%; opacity: 0.5; }
+        }
+
+        .holo-card.glow-edge {
+            box-shadow:
+                0 0 0 1px rgba(0,255,157,0.08),
+                0 0 12px rgba(0,255,157,0.06),
+                inset 0 1px 0 rgba(0,255,157,0.12),
+                inset 0 -1px 0 rgba(0,245,255,0.06);
+        }
+        .holo-card.glow-edge:hover {
+            border-color: rgba(0,255,157,0.35);
+            box-shadow:
+                0 0 0 1px rgba(0,255,157,0.15),
+                0 0 24px rgba(0,255,157,0.12),
+                0 0 48px rgba(0,245,255,0.06),
+                inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        /* ─────────────────────────────────────────────
+           TOP BAR
+        ───────────────────────────────────────────── */
+        #top-bar {
+            top: 0; left: 0; right: 0; z-index: 20;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 24px; height: 52px;
+            background: linear-gradient(180deg,
+                rgba(1,6,8,0.95) 0%, rgba(1,6,8,0.7) 80%, transparent 100%);
+            border-bottom: 1px solid rgba(0,255,157,0.12);
+            box-shadow: 0 1px 0 rgba(0,255,157,0.06), 0 2px 20px rgba(0,0,0,0.6);
+        }
+        .logo {
+            font-family: var(--font-display);
+            font-size: 14px; font-weight: 900; letter-spacing: 0.3em;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--g0) 0%, var(--cyan) 40%, var(--g0) 70%, var(--white) 100%);
+            background-size: 300% 100%;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: logo-shimmer 6s ease-in-out infinite;
+            filter: drop-shadow(0 0 8px rgba(0,255,157,0.4));
+        }
+        @keyframes logo-shimmer {
+            0%, 100% { background-position: 0% 0%; }
+            50%       { background-position: 100% 0%; }
+        }
+        .logo-sub {
+            font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.45em;
+            color: rgba(0,255,157,0.45); display: block; margin-top: 1px;
+            -webkit-text-fill-color: rgba(0,255,157,0.45);
+        }
+        .top-stats { display: flex; gap: 20px; align-items: center; }
+        .stat-chip {
+            display: flex; align-items: center; gap: 7px;
+            padding: 4px 10px;
+            background: rgba(0,255,157,0.04);
+            border: 1px solid rgba(0,255,157,0.1);
+            border-radius: 3px; font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        .stat-chip:hover { border-color: rgba(0,255,157,0.25); background: rgba(0,255,157,0.07); }
+        .stat-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--g0);
+            box-shadow: 0 0 6px var(--g0), 0 0 12px rgba(0,255,157,0.4);
+            animation: dot-pulse 2.4s ease-in-out infinite; flex-shrink: 0;
+        }
+        .stat-dot.warn  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+        .stat-dot.error { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+        .stat-dot.off   { background: rgba(255,255,255,0.15); box-shadow: none; animation: none; }
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.3; transform: scale(0.7); }
+        }
+        .top-clock {
+            font-family: var(--font-display); font-size: 13px; font-weight: 700;
+            letter-spacing: 0.25em; color: var(--cyan);
+            filter: drop-shadow(0 0 6px rgba(0,245,255,0.5));
+        }
+
+        /* ─────────────────────────────────────────────
+           PANELS
+        ───────────────────────────────────────────── */
+        #left-panel {
+            top: 64px; left: 16px; bottom: 72px;
+            width: 230px; display: flex; flex-direction: column; gap: 10px;
+        }
+        #right-panel {
+            top: 64px; right: 16px; bottom: 72px;
+            width: clamp(268px, 28vw, 360px);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 0;
+            max-height: calc(100vh - 136px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 4px;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+        }
+        .panel-box {
+            padding: 14px 16px;
+            width: 100%;
+            min-height: fit-content;
+            flex: 0 0 auto;
+        }
+        #right-panel .panel-box {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        #right-panel .ctrl-row,
+        #right-panel .btn-group,
+        #right-panel .holo-card > div[style*="display:flex"] {
+            flex-wrap: wrap;
+        }
+        #right-panel .ctrl-row {
+            gap: 8px;
+            align-items: center;
+        }
+        #right-panel .ctrl-row > * {
+            min-width: 0;
+        }
+        #right-panel .ctrl-row select,
+        #right-panel .ctrl-row button,
+        #right-panel input[type="text"],
+        #right-panel input[type="range"],
+        #right-panel input[type="color"],
+        #right-panel select {
+            max-width: 100%;
+        }
+        #right-panel .btn-group .hud-btn,
+        #right-panel .ctrl-btn {
+            flex: 1 1 120px;
+        }
+        #right-panel .text-input {
+            flex: 1 1 180px;
+            min-width: 0;
+        }
+        #right-panel label {
+            min-width: 0;
+        }
+        #right-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        #right-panel::-webkit-scrollbar-track {
+            background: rgba(0, 255, 255, 0.05);
+            border-radius: 999px;
+        }
+        #right-panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.3);
+            border-radius: 999px;
+        }
+        #right-panel::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 255, 0.5);
+        }
+        .panel-title {
+            font-family: var(--font-display); font-size: 8.5px; font-weight: 700;
+            letter-spacing: 0.4em; text-transform: uppercase; color: var(--cyan);
+            margin-bottom: 12px; padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0,245,255,0.12);
+            display: flex; align-items: center; gap: 8px;
+            text-shadow: 0 0 8px rgba(0,245,255,0.5); position: relative;
+        }
+        .panel-title::after {
+            content: ''; position: absolute; bottom: -1px; left: 0;
+            width: 40%; height: 1px;
+            background: linear-gradient(90deg, var(--cyan), transparent);
+            box-shadow: 0 0 6px var(--cyan);
+        }
+
+        /* ─────────────────────────────────────────────
+           METERS
+        ───────────────────────────────────────────── */
+        .meter-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 5px;
+        }
+        .meter-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: rgba(0,255,157,0.45); }
+        .meter-value {
+            font-family: var(--font-data); font-size: 11px; font-weight: 500;
+            color: var(--g0); text-shadow: 0 0 8px rgba(0,255,157,0.5); letter-spacing: 0.05em;
+        }
+        .meter-bar {
+            width: 100%; height: 2px; margin-top: 3px; margin-bottom: 9px;
+            background: rgba(0,255,157,0.08); border-radius: 2px; overflow: visible; position: relative;
+        }
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--g2) 0%, var(--g0) 100%);
+            border-radius: 2px;
+            box-shadow: 0 0 6px var(--g0), 0 0 12px rgba(0,255,157,0.3);
+            transition: width 400ms cubic-bezier(0.4,0,0.2,1);
+            position: relative;
+        }
+        .meter-fill::after {
+            content: ''; position: absolute; right: 0; top: -2px;
+            width: 3px; height: 6px; background: var(--white);
+            box-shadow: 0 0 6px var(--white), 0 0 12px var(--g0); border-radius: 2px;
+        }
+        .meter-fill.warn { background: linear-gradient(90deg, var(--amber-d), var(--amber)); box-shadow: 0 0 6px var(--amber); }
+        .meter-fill.critical {
+            background: linear-gradient(90deg, var(--red-d), var(--red));
+            box-shadow: 0 0 6px var(--red);
+            animation: critical-pulse 0.8s ease-in-out infinite;
+        }
+        @keyframes critical-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        /* ─────────────────────────────────────────────
+           NETWORK / STATE ROWS
+        ───────────────────────────────────────────── */
+        .net-row, .state-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 0; border-bottom: 1px solid rgba(0,255,157,0.05);
+        }
+        .net-row:last-child, .state-row:last-child { border-bottom: none; }
+        .net-key, .state-key {
+            font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+            color: rgba(0,255,157,0.4);
+        }
+        .net-val { font-family: var(--font-data); font-size: 10px; color: var(--g0); text-shadow: 0 0 6px rgba(0,255,157,0.4); }
+        .state-val { font-family: var(--font-display); font-size: 10px; font-weight: 700; letter-spacing: 0.15em; color: var(--g0); }
+        .state-val.active {
+            color: var(--cyan);
+            text-shadow: 0 0 8px rgba(0,245,255,0.7), 0 0 16px rgba(0,245,255,0.3);
+            animation: text-flicker 3s ease-in-out infinite;
+        }
+        @keyframes text-flicker {
+            0%, 95%, 100% { opacity: 1; }
+            96% { opacity: 0.7; } 97% { opacity: 1; } 98% { opacity: 0.6; }
+        }
+
+        /* ─────────────────────────────────────────────
+           ACTIVITY LOG
+        ───────────────────────────────────────────── */
+        #activity-log {
+            max-height: 140px; overflow-y: auto;
+            font-size: 9px; color: rgba(0,255,157,0.4);
+            line-height: 1.8; letter-spacing: 0.05em;
+            scrollbar-width: thin; scrollbar-color: rgba(0,255,157,0.2) transparent;
+        }
+        #activity-log::-webkit-scrollbar { width: 2px; }
+        #activity-log::-webkit-scrollbar-thumb { background: rgba(0,255,157,0.25); border-radius: 1px; }
+        #activity-log div::before { content: '› '; color: rgba(0,245,255,0.3); }
+
+        /* ─────────────────────────────────────────────
+           CONTROLS
+        ───────────────────────────────────────────── */
+        .ctrl-row {
+            display: flex; justify-content: space-between; align-items: center; padding: 5px 0;
+        }
+        .ctrl-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(0,255,157,0.4); }
+        select {
+            background: rgba(0,8,5,0.95); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.2); border-radius: 3px;
+            padding: 5px 24px 5px 10px;
+            font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em;
+            outline: none; cursor: pointer;
+            transition: border-color 0.25s, box-shadow 0.25s;
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(0,255,157,0.4)'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: calc(100% - 8px) center;
+        }
+        select:focus { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(0,245,255,0.15); }
+        .hud-btn {
+            background: rgba(0,8,5,0.9); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.2); border-radius: 3px;
+            padding: 7px 13px;
+            font-family: var(--font-display); font-size: 8px; font-weight: 700;
+            letter-spacing: 0.3em; text-transform: uppercase;
+            cursor: pointer; transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+            position: relative; overflow: hidden;
+        }
+        .hud-btn::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(105deg, transparent 30%, rgba(0,255,157,0.12) 50%, transparent 70%);
+            transform: translateX(-100%); transition: transform 0.5s ease;
+        }
+        .hud-btn:hover::before { transform: translateX(100%); }
+        .hud-btn:hover {
+            background: rgba(0,255,157,0.08); border-color: var(--g0); color: var(--white);
+            box-shadow: 0 0 12px rgba(0,255,157,0.2), inset 0 1px 0 rgba(255,255,255,0.06);
+            text-shadow: 0 0 8px rgba(0,255,157,0.6);
+        }
+        .hud-btn:active { transform: scale(0.97); }
+        .hud-btn.active {
+            background: rgba(0,245,255,0.1); border-color: var(--cyan); color: var(--cyan);
+            box-shadow: 0 0 16px rgba(0,245,255,0.25); text-shadow: 0 0 8px var(--cyan);
+        }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+        .text-input {
+            flex: 1; background: rgba(0,8,5,0.95); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.15); border-radius: 3px;
+            padding: 7px 12px; font-family: var(--font-mono); font-size: 10px;
+            letter-spacing: 0.05em; outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        .text-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(0,245,255,0.1); }
+        .text-input::placeholder { color: rgba(0,255,157,0.18); }
+
+        /* ─────────────────────────────────────────────
+           SPEECH BUBBLE
+        ───────────────────────────────────────────── */
+        #speech-bubble {
+            top: 50%; left: 50%;
+            transform: translate(-50%, 115px);
+            max-width: 540px; width: 88%;
+            padding: 18px 28px;
+            background:
+                radial-gradient(ellipse 120% 80% at 50% 0%, rgba(0,245,255,0.07) 0%, transparent 60%),
+                rgba(1,12,8,0.82);
+            border: 1px solid rgba(0,255,157,0.2);
+            border-top: 1px solid rgba(0,245,255,0.3);
+            border-radius: 6px;
+            backdrop-filter: blur(24px) saturate(140%);
+            -webkit-backdrop-filter: blur(24px) saturate(140%);
+            box-shadow:
+                0 -1px 0 rgba(0,245,255,0.2),
+                0 8px 32px rgba(0,0,0,0.7),
+                inset 0 1px 0 rgba(0,245,255,0.08);
+            font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
+            color: rgba(255,255,255,0.88); letter-spacing: 0.03em; text-align: center;
+            opacity: 0;
+            transition: opacity 0.45s cubic-bezier(0.4,0,0.2,1),
+                        transform 0.45s cubic-bezier(0.4,0,0.2,1);
+            pointer-events: none;
+        }
+        #speech-bubble.visible { opacity: 1; transform: translate(-50%, 108px); }
+        #speech-bubble::before {
+            content: ''; position: absolute; inset: 0; border-radius: 6px;
+            background: repeating-linear-gradient(0deg,
+                transparent 0px, transparent 3px,
+                rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px);
+            pointer-events: none;
+        }
+
+        /* ─────────────────────────────────────────────
+           BOTTOM BAR
+        ───────────────────────────────────────────── */
+        #bottom-bar {
+            bottom: 0; left: 0; right: 0; z-index: 20;
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 20px; height: 60px;
+            background: linear-gradient(0deg,
+                rgba(1,6,8,0.96) 0%, rgba(1,6,8,0.8) 70%, transparent 100%);
+            border-top: 1px solid rgba(0,255,157,0.1);
+            box-shadow: 0 -1px 0 rgba(0,255,157,0.04), 0 -4px 24px rgba(0,0,0,0.5);
+        }
+        #mic-btn {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: rgba(0,10,6,0.95); border: 1px solid rgba(0,255,157,0.2);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; flex-shrink: 0; font-size: 15px;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative;
+        }
+        #mic-btn::after {
+            content: ''; position: absolute; inset: -3px; border-radius: 50%;
+            border: 1px solid transparent; transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        #mic-btn:hover { border-color: rgba(0,255,157,0.4); box-shadow: 0 0 16px rgba(0,255,157,0.2); }
+        #mic-btn.listening {
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 3px rgba(0,245,255,0.12), 0 0 24px rgba(0,245,255,0.3);
+        }
+        #mic-btn.listening::after {
+            border-color: rgba(0,245,255,0.3);
+            animation: mic-ring 1.4s ease-in-out infinite;
+        }
+        @keyframes mic-ring {
+            0%   { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        #voice-status { font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(0,255,157,0.35); min-width: 80px; }
+        #command-input {
+            flex: 1; background: rgba(0,8,5,0.8); color: var(--g0);
+            border: 1px solid rgba(0,255,157,0.12); border-radius: 4px;
+            padding: 9px 16px; font-family: var(--font-mono); font-size: 11px;
+            letter-spacing: 0.06em; outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        #command-input:focus { border-color: rgba(0,245,255,0.3); box-shadow: 0 0 0 1px rgba(0,245,255,0.08); }
+        #command-input::placeholder { color: rgba(0,255,157,0.15); }
+        .cmd-prefix { font-family: var(--font-data); font-size: 13px; color: rgba(0,245,255,0.4); flex-shrink: 0; user-select: none; -webkit-user-select: none; }
+        #transcript { font-size: 10px; color: var(--g0); max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.05em; }
+        #transcript .interim { color: rgba(0,255,157,0.3); font-style: italic; }
+
+        /* ─────────────────────────────────────────────
+           SCANLINE + VIGNETTE
+        ───────────────────────────────────────────── */
+        .scanline-overlay {
+            position: fixed; inset: 0; z-index: 5; pointer-events: none;
+            background: repeating-linear-gradient(0deg,
+                transparent 0px, transparent 3px,
+                rgba(0,0,0,0.055) 3px, rgba(0,0,0,0.055) 4px);
+            animation: scanroll 12s linear infinite;
+        }
+        @keyframes scanroll { 0% { background-position: 0 0; } 100% { background-position: 0 -80px; } }
+
+        .edge-vignette {
+            position: fixed; inset: 0; z-index: 4; pointer-events: none;
+            background:
+                linear-gradient(to right,  rgba(1,6,8,0.55) 0%, transparent 18%, transparent 82%, rgba(1,6,8,0.55) 100%),
+                linear-gradient(to bottom, rgba(1,6,8,0.45) 0%, transparent 14%, transparent 84%, rgba(1,6,8,0.45) 100%);
+        }
+
+        /* ─────────────────────────────────────────────
+           CORNER BRACKETS
+        ───────────────────────────────────────────── */
+        .corner-bracket { position: fixed; z-index: 15; pointer-events: none; width: 28px; height: 28px; }
+        .corner-bracket::before, .corner-bracket::after {
+            content: ''; position: absolute; background: var(--g0);
+            box-shadow: 0 0 8px var(--g0), 0 0 16px rgba(0,255,157,0.4);
+            animation: corner-glow 4s ease-in-out infinite;
+        }
+        .cb-tl { top: 10px; left: 10px; }
+        .cb-tl::before { top:0; left:0; width:1px; height:28px; }
+        .cb-tl::after  { top:0; left:0; width:28px; height:1px; }
+        .cb-tr { top: 10px; right: 10px; }
+        .cb-tr::before { top:0; right:0; width:1px; height:28px; }
+        .cb-tr::after  { top:0; right:0; width:28px; height:1px; }
+        .cb-bl { bottom: 10px; left: 10px; }
+        .cb-bl::before { bottom:0; left:0; width:1px; height:28px; }
+        .cb-bl::after  { bottom:0; left:0; width:28px; height:1px; }
+        .cb-br { bottom: 10px; right: 10px; }
+        .cb-br::before { bottom:0; right:0; width:1px; height:28px; }
+        .cb-br::after  { bottom:0; right:0; width:28px; height:1px; }
+        @keyframes corner-glow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; box-shadow: 0 0 12px var(--g0), 0 0 24px rgba(0,255,157,0.5); }
+        }
+
+        /* ─────────────────────────────────────────────
+           RESPONSIVE
+        ───────────────────────────────────────────── */
+        @media (max-width: 960px) {
+            #left-panel { display: none; }
+            #right-panel {
+                width: min(320px, calc(100vw - 32px));
+            }
+        }
+        @media (max-width: 640px) {
+            #right-panel {
+                top: 60px;
+                right: 8px;
+                bottom: 64px;
+                width: min(340px, calc(100vw - 16px));
+                max-height: calc(100vh - 124px);
+                gap: 8px;
+                padding-right: 2px;
+            }
+            #right-panel .panel-box {
+                padding: 12px;
+            }
+            #speech-bubble { transform: translate(-50%, 80px); }
+            #speech-bubble.visible { transform: translate(-50%, 72px); }
+        }
+    
+        /* ═══ Enhanced UI Elements ═══ */
+        .mode-badge {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, rgba(0, 255, 255, 0.2), rgba(255, 0, 255, 0.2));
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            padding: 6px 20px;
+            border-radius: 20px;
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75em;
+            font-weight: 700;
+            letter-spacing: 2px;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(0, 255, 255, 0.6); }
+        }
+
+        .theme-selector-btn {
+            position: fixed;
+            top: 80px;
+            right: 30px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            z-index: 1000;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .theme-selector-btn:hover {
+            background: rgba(0, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .gesture-help-btn {
+            position: fixed;
+            bottom: 170px;
+            right: 30px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .gesture-help-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+            transform: scale(1.1);
+        }
+
+        .ai-assistant-badge {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            background: rgba(255, 0, 255, 0.1);
+            border: 2px solid #ff00ff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .ai-assistant-badge:hover {
+            background: rgba(255, 0, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .voice-indicator {
+            position: fixed;
+            bottom: 240px;
+            right: 30px;
+            background: rgba(255, 100, 0, 0.1);
+            border: 2px solid #ff6400;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .voice-indicator:hover {
+            background: rgba(255, 100, 0, 0.2);
+            transform: scale(1.1);
+        }
+
+        .voice-indicator.listening {
+            animation: pulse-red 1s ease-in-out infinite;
+            background: rgba(255, 0, 0, 0.3);
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
+            50% { box-shadow: 0 0 30px rgba(255, 0, 0, 0.9); }
+        }
+
+    
+        /* ═══ Lipsync & Voice UI Styles ═══ */
+        #lipsync-avatar-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .lipsync-info {
+            position: fixed;
+            top: 120px;
+            right: 30px;
+            background: rgba(0, 255, 100, 0.1);
+            border: 1px solid #00ff64;
+            padding: 10px 15px;
+            border-radius: 10px;
+            z-index: 1000;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+
+        .lipsync-info .viseme-display {
+            font-size: 2em;
+            text-align: center;
+            color: #00ff64;
+            margin-top: 5px;
+            font-weight: bold;
+            text-shadow: 0 0 10px #00ff64;
+        }
+
+        #voice-ui-container {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10000;
+        }
+
+        .transcript-display {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            padding: 15px 25px;
+            border-radius: 15px;
+            max-width: 600px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .transcript-final {
+            color: #00ffff;
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+
+        .transcript-interim {
+            color: #00ff64;
+            font-size: 0.95em;
+            opacity: 0.7;
+            font-style: italic;
+        }
+
+        .wake-word-indicator {
+            position: fixed;
+            bottom: 150px;
+            left: 30px;
+            background: rgba(255, 100, 0, 0.1);
+            border: 2px solid #ff6400;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            z-index: 1000;
+            display: none;
+        }
+
+        .wake-word-indicator.active {
+            display: block;
+            animation: pulse-orange 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-orange {
+            0%, 100% { box-shadow: 0 0 10px rgba(255, 100, 0, 0.5); }
+            50% { box-shadow: 0 0 30px rgba(255, 100, 0, 0.9); }
+        }
+
+         /* Scrollbar styling for UI modes */
+        .ui-mode-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .ui-mode-container::-webkit-scrollbar-track {
+            background: rgba(0, 255, 255, 0.05);
+        }
+
+        .ui-mode-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .ui-mode-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 255, 0.5);
+        }
+
+         /* Transition effects */
+        .mode-transition {
+            animation: fadeIn 0.8s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+
+        /* Loading animation */
+        .loading-spinner {
+            border: 3px solid rgba(0, 255, 255, 0.1);
+            border-top: 3px solid #00ffff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* ─────────────────────────────────────────────
+           MINIKERNEL PANEL
+        ───────────────────────────────────────────── */
+        #mk-output {
+            max-height: 180px;
+            overflow-y: auto;
+            font-size: 9px;
+            line-height: 1.8;
+            letter-spacing: 0.04em;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0,255,157,0.2) transparent;
+        }
+        #mk-output::-webkit-scrollbar { width: 2px; }
+        #mk-output::-webkit-scrollbar-thumb { background: rgba(0,255,157,0.25); border-radius: 1px; }
+        .mk-line { padding: 1px 0; }
+        .mk-cmd   { color: rgba(0,245,255,0.85); }
+        .mk-ok    { color: rgba(0,255,157,0.75); }
+        .mk-error { color: rgba(255,80,80,0.85); }
+        .mk-meta  { color: rgba(255,255,255,0.25); font-size: 8px; }
+        .mk-system{ color: rgba(0,245,255,0.4); }
+        .mk-status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 12px;
+            margin-bottom: 10px;
+        }
+        .mk-stat { display: flex; flex-direction: column; gap: 1px; }
+        .mk-stat-k { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(0,255,157,0.35); }
+        .mk-stat-v { font-family: var(--font-data); font-size: 11px; color: var(--g0); text-shadow: 0 0 6px rgba(0,255,157,0.4); }
+
+    </style>
+</head>
+<body>
+
+    <!-- ╔══════════════════════════════════════╗ -->
+    <!-- ║  LAYER 1 — Spatial environment       ║ -->
+    <!-- ║  SpatialEnvironmentRenderer mounts   ║ -->
+    <!-- ║  an opaque <canvas> here             ║ -->
+    <!-- ╚══════════════════════════════════════╝ -->
+    <div id="env-layer"></div>
+
+    <!-- ╔══════════════════════════════════════╗ -->
+    <!-- ║  LAYER 2 — Binary avatar             ║ -->
+    <!-- ║  BinaryAvatarRenderer mounts an      ║ -->
+    <!-- ║  alpha:true <canvas> here            ║ -->
+    <!-- ╚══════════════════════════════════════╝ -->
+    
+    <div id="avatar-layer">
+        <!-- Binary Avatar Canvas Container -->
+        <div id="avatar-container"></div>
+    </div>
+    
+    <!-- React 3D Avatar Container (for realistic lip-sync avatar).
+         z-index 6: above env-layer(1)/avatar-layer(2)/vignette(4)/scanline(5),
+         below HUD(10) so status cards stay readable on top of the head.
+         Full-viewport sizing — head framing is controlled by the camera
+         in assets/avatar/Avatar.jsx (fov + position). Don't add transform
+         or margin:auto centering here — WebGL canvases can render
+         off-target inside transformed parents. -->
+    <!--<div id="react-avatar-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; display: none; outline: 2px dashed magenta; background: rgb(255, 0, 255, 0.04)"></div-->
+    <div id="react-avatar-container" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(60vw, 60vh); height: min(60vw, 60vh); max-width: 720px; max-height: 720px; z-index: 6; pointer-events: none; background: transparent; visibility: visible; opacity: 1; display: none;"></div>
+    <!-- Mode indicator -->
+    <div class="mode-badge" id="mode-badge">AVATAR MODE</div>
+
+    <!-- Theme selector button -->
+    <button class="theme-selector-btn" id="theme-selector-btn">
+        🎨 Themes
+    </button>
+
+    <!-- AI Assistant badge -->
+    <div class="ai-assistant-badge" id="ai-assistant-btn" title="AI File Assistant">
+        🤖
+    </div>
+
+    <!-- Gesture help button -->
+    <div class="gesture-help-btn" id="gesture-help-btn" title="Gesture Controls">
+        👆
+    </div>
+    
+    <!-- Gesture Trainer button -->
+    <div class="gesture-trainer-btn" id="gesture-trainer-btn" title="Train Custom Gestures">
+        🎓
+    </div>
+
+    <!-- Voice command indicator -->
+    <div class="voice-indicator" id="voice-btn" title="Click to use voice commands">
+        🎤
+    </div>
+
+
+    
+    <!-- Lipsync Avatar Container (overlays main avatar) -->
+    <div id="lipsync-avatar-container"></div>
+
+    <!-- Lipsync Info Panel -->
+    <!--<div class="lipsync-info" id="lipsync-info" style="display: none;">
+        <div>Lip-Sync: <span id="lipsync-mode">Disabled</span></div>
+        <div class="viseme-display" id="current-viseme">—</div>
+    </div>-->
+
+    <!-- Wake Word Indicator -->
+    <div class="wake-word-indicator" id="wake-word-indicator">
+        🎤 Listening for "Hey AIOS"
+    </div>
+
+    <!-- TTS Method Indicator -->
+    <div class="tts-indicator" id="tts-indicator" style="
+        position: fixed;
+        top: 60px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        border: 1px solid #00ccff;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        color: #00ccff;
+        z-index: 1000;
+        box-shadow: 0 0 10px rgba(0, 204, 255, 0.3);
+        backdrop-filter: blur(5px);
+    ">
+        🔊 Browser TTS
+    </div>
+
+    <!-- Voice UI Container -->
+    <div id="voice-ui-container" class="hud hud-interactive" style="display: none;"></div>
+
+
+    <!-- ── Atmospheric overlays ── -->
+    <div class="edge-vignette"></div>
+    <div class="scanline-overlay"></div>
+
+    <!-- ── Corner reticles ── -->
+    <div class="corner-bracket cb-tl"></div>
+    <div class="corner-bracket cb-tr"></div>
+    <div class="corner-bracket cb-bl"></div>
+    <div class="corner-bracket cb-br"></div>
+
+    <!-- ── Speech bubble ── -->
+    <div id="speech-bubble" class="hud"></div>
+
+    <!-- ── Top bar ── -->
+    <div id="top-bar" class="hud">
+        <div>
+            <span class="logo">AIOS</span>
+            <span class="logo-sub">Neural Interface v2.0</span>
+        </div>
+        <div class="top-stats">
+            <div class="stat-chip"><span class="stat-dot" id="dot-system"></span><span>System</span></div>
+            <div class="stat-chip"><span class="stat-dot" id="dot-avatar"></span><span>Avatar</span></div>
+            <div class="stat-chip"><span class="stat-dot" id="dot-tts"></span><span>TTS</span></div>
+            <div class="stat-chip"><span class="stat-dot off" id="dot-voice"></span><span>Voice</span></div>
+            <div class="stat-chip"><span class="stat-dot off" id="dot-mk"></span><span>MiniKernel</span></div>
+            <div class="tel-item"><span class="tel-dot"></span> DYNAMIC UI</div>
+            <div class="tel-item"><span class="tel-dot"></span> NEURAL INTERFACE</div>
+        </div>
+        <span class="top-clock" id="clock">--:--:--</span>
+    </div>
+
+    <!-- ── Left panel: Telemetry ── -->
+    <div id="left-panel" class="hud">
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">System Telemetry</div>
+            <div class="meter-row"><span class="meter-label">CPU Load</span><span class="meter-value" id="cpu-val">0%</span></div>
+            <div class="meter-bar"><div class="meter-fill" id="cpu-bar" style="width:0%"></div></div>
+            <div class="meter-row"><span class="meter-label">Memory</span><span class="meter-value" id="mem-val">0%</span></div>
+            <div class="meter-bar"><div class="meter-fill" id="mem-bar" style="width:0%"></div></div>
+            <div class="meter-row"><span class="meter-label">Disk I/O</span><span class="meter-value" id="disk-val">0%</span></div>
+            <div class="meter-bar" style="margin-bottom:0"><div class="meter-fill" id="disk-bar" style="width:0%"></div></div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Network</div>
+            <div class="net-row"><span class="net-key">Socket</span><span class="net-val" id="ws-status">—</span></div>
+            <div class="net-row"><span class="net-key">Latency</span><span class="net-val" id="ws-latency">—</span></div>
+        </div>
+        <div class="holo-card glow-edge panel-box" style="flex:1;min-height:0;">
+            <div class="panel-title">Activity Log</div>
+            <div id="activity-log"></div>
+        </div>
+    </div>
+
+    <!-- ── Right panel: Controls ── -->
+    <div id="right-panel" class="hud hud-interactive">
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Avatar State</div>
+            <div class="state-row"><span class="state-key">Activity</span><span class="state-val" id="av-activity">IDLE</span></div>
+            <div class="state-row"><span class="state-key">Emotion</span><span class="state-val" id="av-emotion">NEUTRAL</span></div>
+            <div class="state-row"><span class="state-key">Volume</span><span class="state-val" id="av-volume">0.00</span></div>
+            <div class="state-row"><span class="state-key">Digits</span><span class="state-val" id="av-digits">—</span></div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Avatar Mode</div>
+            <div class="ctrl-row">
+                <button class="ctrl-btn" id="toggle-avatar-mode" type="button" title="Open Dynamic Neural Interface — files, browser, terminal &amp; more">
+                    ⚡ Dynamic Interface
+                </button>
+            </div>
+            <div style="font-size:10px;margin-top:6px;color:#0ff;">
+                Current: <span id="current-avatar-mode">Binary</span>
+            </div>
+            <div style="font-size:10px;margin-top:4px;color:#0ff;"><span id="dynamic-avatar-mode">Dynamic</span> Mode Enabled</div>
+            <div style="font-size:9px;margin-top:4px;color:#0ff;">
+                (3D mode requires more resources)
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box" id="avatar-customizer-card">
+            <div class="panel-title">Customize Avatar</div>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:11px;">
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Smile</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" id="cust-smile" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Frown</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" id="cust-frown" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Surprise</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" id="cust-surprise" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Wink</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" id="cust-wink" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Visemes</span>
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" id="cust-viseme" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Detail</span>
+                    <input type="range" min="2" max="6" step="1" value="4" id="cust-subdivisions" style="flex:1;">
+                </label>
+                <label style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <span>Skin</span>
+                    <input type="color" value="#d8b899" id="cust-skin" style="border:none;background:transparent;cursor:pointer;">
+                </label>
+                <button class="hud-btn" id="cust-generate" style="margin-top:4px;">⚙️ Generate &amp; Apply</button>
+                <div id="cust-status" style="font-size:10px;color:#0ff;min-height:14px;"></div>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Controls</div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Palette</span>
+                <select id="palette-select" title="Palette">
+                    <option value="matrix">Matrix Green</option>
+                    <option value="cyan">Electric Cyan</option>
+                    <option value="cyber-magenta">Cyber Magenta</option>
+                    <option value="amber">Amber</option>
+                    <option value="ice">Ice</option>
+                    <option value="red">Alert Red</option>
+                </select>
+            </div>
+            <div class="ctrl-row" style="margin-top:4px;">
+                <span class="ctrl-label">Activity</span>
+                <select id="activity-select" title="Activity State" style="width:110px">
+                    <option value="idle">Idle</option>
+                    <option value="thinking">Thinking</option>
+                    <option value="speaking">Speaking</option>
+                    <option value="error">Error</option>
+                </select>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Quick Actions</div>
+            <div class="btn-group">
+                <button class="hud-btn" id="btn-demo">Demo</button>
+                <button class="hud-btn" id="btn-greet">Greet</button>
+                <button class="hud-btn" id="btn-glitch">Glitch</button>
+                <button class="hud-btn" id="btn-effects">CRT Off</button>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Speech Test</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <input type="text" class="text-input" id="speech-text" placeholder="Type to speak...">
+                <button class="hud-btn" id="btn-speak">Say</button>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box">
+            <div class="panel-title">Voice Settings</div>
+            <div style="font-size:11px;margin-bottom:8px;">
+                <label>Voice:</label>
+                <select id="voice-select" title="Voice" style="width:100%;padding:4px;background:#0a0a1f;color:#0ff;border:1px solid #0ff;margin-top:4px;font-size:10px;">
+                    <option>Loading voices...</option>
+                </select>
+            </div>
+            <div style="font-size:11px;margin-bottom:8px;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:6px;">
+                    <input type="checkbox" id="conversation-mode-toggle" style="cursor:pointer;">
+                    <span>Continuous Conversation</span>
+                </label>
+                <div style="margin-left:20px;color:#0ff;font-size:10px;opacity:0.7;">
+                    Stay awake between commands (8s)
+                </div>
+            </div>
+            <div style="font-size:11px;margin-top:12px;">
+                <div style="margin-bottom:4px;color:#0ff;">Wake Words:</div>
+                <div id="wake-words-list" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:24px;"></div>
+                <div style="display:flex;gap:4px;">
+                    <input type="text" id="new-wake-word" placeholder="Add custom..." 
+                           style="flex:1;background:#001a1a;border:1px solid #0ff;color:#0ff;padding:4px 8px;font-size:10px;border-radius:2px;">
+                    <button class="hud-btn" id="btn-add-wake" style="padding:4px 12px;font-size:10px;">Add</button>
+                </div>
+            </div>
+        </div>
+        <div class="holo-card glow-edge panel-box" id="minikernel-panel">
+            <div class="panel-title">MiniKernel</div>
+
+            <!-- Status grid -->
+            <div class="mk-status-grid">
+                <div class="mk-stat">
+                    <span class="mk-stat-k">State</span>
+                    <span class="mk-stat-v" id="mk-state-val">OFFLINE</span>
+                </div>
+                <div class="mk-stat">
+                    <span class="mk-stat-k">Services</span>
+                    <span class="mk-stat-v" id="mk-svc-val">—</span>
+                </div>
+                <div class="mk-stat">
+                    <span class="mk-stat-k">Memory</span>
+                    <span class="mk-stat-v" id="mk-mem-val">—</span>
+                </div>
+                <div class="mk-stat">
+                    <span class="mk-stat-k">Capabilities</span>
+                    <span class="mk-stat-v" id="mk-cap-val">—</span>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="ctrl-row" style="gap:6px;margin-bottom:8px;">
+                <button class="hud-btn" id="mk-boot-btn" style="flex:1;">⚡ Boot</button>
+                <button class="hud-btn" id="mk-shut-btn" style="flex:1;">■ Halt</button>
+                <button class="hud-btn" id="mk-clear-btn" style="flex:0 0 auto;padding:7px 10px;">✕</button>
+            </div>
+
+            <!-- Output log -->
+            <div id="mk-output"></div>
+        </div>
+    </div>
+
+    <!-- ── Bottom bar ── -->
+    <div id="bottom-bar" class="hud hud-interactive">
+        <div id="mic-btn" title="Toggle voice input">🎤</div>
+        <span id="voice-status">Voice off</span>
+        <div id="transcript"></div>
+        <span class="cmd-prefix">›</span>
+        <input type="text" id="command-input" placeholder="enter command or say 'hey aios'...">
+    </div>
+
+<!-- Eel JavaScript bridge -->
+<script type="text/javascript" src="./eel.js"></script>
+<script type="text/javascript" src="./script.js"></script>
+<script type="text/javascript" src="./confirmation-dialog.js"></script>
+<script type="text/javascript" src="./browserbase-panel.js"></script>
+
+<!-- ═══ Scripts ═══ -->
+<script type="module">
+    // ═══ Lipsync & Voice System Imports ═══
+    import { LipSyncAvatar } from './avatar-3d-lipsync.js';
+    import { FileTypeHandler } from './file-type-handlers.js';
+    import { VoiceInputController } from './voice-input.js';
+    import { VoiceUI } from './voice-ui.js';
+    import { ExtendedVoiceCommands } from './voice-commands-extended.js';
+    import { SpatialEnvironmentRenderer } from './SpatialEnvironmentRenderer.js';
+    import { BinaryAvatarRenderer }       from './binary-avatar.js';
+    import { AvatarController }           from './avatar-controller.js';
+    import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+    import { NativeDesktopBridge } from './native-desktop-bridge.js';
+    import { IntegratedVoiceDesktop } from './integrated-voice-desktop.js';
+    import { AIOSMicrophoneButton } from './aios-microphone-button.js';
+    import { AdvancedDesktopBridge } from './advanced-desktop-bridge.js';
+    import { UIThemeManager, UI_THEMES } from './ui-themes.js';
+    import { MobileGestureHandler } from './mobile-gestures.js';
+    import {  OnboardingVoiceIntegration } from './onboarding-voice-integration.js';
+    
+    // ═══ Voice Keyboard Commands ═══
+    import { VoiceKeyboardController } from './voice-keyboard-controller.js';
+    
+    // ═══ React Avatar Integration ═══
+    import { ReactAvatarController } from './react-avatar-bridge.js';
+    import { AvatarModeSwitcher, AVATAR_MODES } from './avatar-mode-switcher.js';
+    import { MiniKernelPanel } from './minikernel-panel.js';
+
+    window.AIOS = window.AIOS || {};
+
+   // Global references for key systems
+    let voiceUI = null;
+    let fileTypeHandlers = null;
+    let fileHandler = null;
+    let themeManager = null;
+    let gestureHandler = null;
+    let reactAvatarController = null;
+    let avatarModeSwitcher = null;
+    let voiceKeyboard = null;
+
+
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const PALETTE  = 'matrix';
+        const pageModel = new URLSearchParams(window.location.search).get('model');
+        const reactAvatarModelUrl = pageModel
+            ? (pageModel.startsWith('/') ? pageModel : `/models/${pageModel}`)
+            : '/models/avatar.glb';
+
+    // ── 1. Spatial environment — opaque canvas, z-index 1 ────────────────
+    const envRenderer = new SpatialEnvironmentRenderer(
+        document.getElementById('env-layer'),
+        { colorPalette: PALETTE }
+    );
+
+    // ── 2. Binary avatar — alpha canvas, z-index 2 ───────────────────────
+    //    BinaryAvatarRenderer must call:
+    //      this.renderer.setClearColor(0x000000, 0)   ← alpha = 0 (transparent)
+    //    so the environment shows through.
+    const avatarRenderer = new BinaryAvatarRenderer(
+        document.getElementById('avatar-layer'),
+        {
+            colorPalette:    PALETTE,
+            digitCount:      isMobile ? 4000 : 8000,
+            enableCRT:       !isMobile,
+            enableChromatic: !isMobile,
+            enableBloom:     true,
+            enableHoloScan:  true,
+        }
+    );
+    
+    // Alias for convenience
+    const avatar = avatarRenderer;
+    avatar.setState('initializing');
+
+            // Make globally available (dynamicUI created by second module block)
+            window.avatar = avatar;
+
+            // Listen for mode changes
+            window.addEventListener('dynamicui:modeChanged', (e) => {
+                const { from, to } = e.detail;
+                console.log(`[DynamicUI] Mode changed: ${from} → ${to}`);
+                window.updateModeIndicator?.(to);
+
+                // Update avatar state based on mode
+                if (to === 'avatar') {
+                    avatar.setState('idle');
+                } else {
+                    avatar.setState('background');
+                }
+            });
+
+            // Listen for file clicks
+            window.addEventListener('dynamicui:fileClicked', (e) => {
+                const { file } = e.detail;
+                
+                // Example: trigger avatar reaction based on file type
+                if (file.type.startsWith('image/')) {
+                    avatar.setState('surprised');
+                    setTimeout(() => avatar.setState('idle'), 2000);
+                } else if (file.type === 'text/plain') {
+                    avatar.setState('thinking');
+                    setTimeout(() => avatar.setState('idle'), 2000);
+                } else if (file.type.startsWith('audio/')) {
+                    avatar.setState('listening');
+                    setTimeout(() => avatar.setState('idle'), 2000);
+                }
+                
+            });
+
+            // Set initial state
+            avatar.setState('idle');
+
+            console.log('[AIOS] Dynamic Avatar Interface ready!');
+
+             // Create file type handler
+            fileHandler = new FileTypeHandler({
+                enableSyntaxHighlighting: true,
+                enableMarkdown: true
+            });
+
+            // Load sample files from backend if available
+            if (typeof eel !== 'undefined') {
+                try {
+                    const files = await eel.get_desktop_files()();
+                    console.log('[AIOS] Loaded files from backend:', files);
+                } catch (err) {
+                    console.log('[AIOS] Running without backend, using sample data');
+                }
+            }
+        
+
+
+    // ── System telemetry ──────────────────────────────────────────────────
+    function updateTelemetry(status) {
+        const cpu = Math.round(status.cpu_usage || 0);
+        const mem = Math.round(status.memory_usage || 0);
+        const disk = Math.round(status.disk_usage || 0);
+
+        document.getElementById('cpu-val').textContent = cpu + '%';
+        document.getElementById('mem-val').textContent = mem + '%';
+        document.getElementById('disk-val').textContent = disk + '%';
+
+        const cpuBar = document.getElementById('cpu-bar');
+        cpuBar.style.width = cpu + '%';
+        cpuBar.className = 'meter-fill' + (cpu > 80 ? ' critical' : cpu > 50 ? ' warn' : '');
+
+        const memBar = document.getElementById('mem-bar');
+        memBar.style.width = mem + '%';
+        memBar.className = 'meter-fill' + (mem > 85 ? ' critical' : mem > 65 ? ' warn' : '');
+
+        const diskBar = document.getElementById('disk-bar');
+        diskBar.style.width = disk + '%';
+        diskBar.className = 'meter-fill' + (disk > 90 ? ' critical' : disk > 70 ? ' warn' : '');
+    }
+
+    // ── Intercept avatar WebSocket messages for telemetry + commands ──
+    const _origHandleWS = AvatarController.prototype.handleWebSocketMessage;
+    AvatarController.prototype.handleWebSocketMessage = function(data) {
+        try {
+            const msg = JSON.parse(data);
+            if (msg.type === 'system_status' && msg.status) {
+                updateTelemetry(msg.status);
+            }
+            if (msg.type === 'command' && msg.command) {
+                processCmd(msg.command);
+            }
+            if (msg.type === 'agent_result') {
+                handleAgentResult(msg);
+            }
+        } catch(e) {}
+        return _origHandleWS.call(this, data);
+    };
+
+    // ── 3. Avatar controller (TTS / WS) ──────────────────────────────────
+    //    Pass the existing avatarRenderer so the controller does NOT try
+    //    to create a second BinaryAvatarRenderer (which would fail on
+    //    null container or double-mount the canvas).
+    let controller = null;
+    try {
+        controller = new AvatarController(null, { renderer: avatarRenderer });
+        window.AIOS.controller = controller;
+        controller.onAgentResult = handleAgentResult;
+    } catch(e) { logActivity('AvatarController unavailable: ' + e.message); }
+
+    // ── Poll telemetry via WebSocket when available, otherwise locally ──
+    async function pollTelemetry() {
+        try {
+            if (controller?.ws?.readyState === WebSocket.OPEN) {
+                controller.ws.send(JSON.stringify({ type: 'request_status' }));
+            } else {
+                // Local fallback — use Eel or Performance API
+                if (typeof eel !== 'undefined' && eel.get_system_stats) {
+                    const stats = await eel.get_system_stats()();
+                    if (stats) updateTelemetry(stats);
+                } else {
+                    // Estimate from Performance API (browser-only approximation)
+                    const mem = performance.memory
+                        ? Math.round((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100)
+                        : 0;
+                    updateTelemetry({
+                        cpu_usage: Math.round(Math.random() * 15 + 5),
+                        memory_usage: mem || Math.round(Math.random() * 10 + 30),
+                        disk_usage: 0,
+                    });
+                }
+            }
+        } catch(e) {}
+    }
+    setInterval(pollTelemetry, 3000);
+    pollTelemetry(); // initial call
+
+    window.envRenderer    = envRenderer;
+    window.avatarRenderer = avatarRenderer;
+
+    // ── Lockstep helpers ──────────────────────────────────────────────────
+    //    Drive both renderers from a single call. Exposed on window so
+    //    the addEventListener handlers (below) and console debugging work.
+    function setActivity(a) {
+        envRenderer.setActivity(a);
+        avatarRenderer.setActivity(a);
+    }
+    function setVolume(v) {
+        envRenderer.setVolume(v);
+        avatarRenderer.setVolume(v);
+    }
+    function setPalette(p) {
+        envRenderer.setColorPalette(p);
+        avatarRenderer.setColorPalette(p);
+    }
+    // Expose to global scope for inline handlers / console
+    window.setPalette  = setPalette;
+    window.setActivity = setActivity;
+    window.setVolume   = setVolume;
+
+    // ── Clock ──────────────────────────────────────────────────────────────
+    function updateClock() {
+        document.getElementById('clock').textContent =
+            new Date().toTimeString().slice(0, 8);
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    // ── Activity log ───────────────────────────────────────────────────────
+    function logActivity(msg) {
+        const log = document.getElementById('activity-log');
+        const ts  = new Date().toTimeString().slice(0, 8);
+        const el  = document.createElement('div');
+        el.textContent = `[${ts}] ${msg}`;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+        while (log.children.length > 50) log.removeChild(log.firstChild);
+    }
+
+    // ── Speech bubble ──────────────────────────────────────────────────────
+    let speechTimeout = null;
+    function showSpeechBubble(text, duration = 6000) {
+        const bubble = document.getElementById('speech-bubble');
+        bubble.textContent = text;
+        bubble.classList.add('visible');
+        clearTimeout(speechTimeout);
+        speechTimeout = setTimeout(() => bubble.classList.remove('visible'), duration);
+    }
+
+    // ── Speak ──────────────────────────────────────────────────────────────
+    async function speak(text, emotion = 'neutral') {
+        showSpeechBubble(text);
+        logActivity('Speaking: ' + text.slice(0, 60) + (text.length > 60 ? '…' : ''));
+        const actEl = document.getElementById('av-activity');
+        actEl.textContent = 'SPEAKING'; actEl.classList.add('active');
+        setActivity('speaking');
+
+        if (controller) {
+            await controller.speak(text, { emotion });
+        } else {
+            await new Promise(res => {
+                const u = new SpeechSynthesisUtterance(text);
+                u.rate = 0.95; u.pitch = 1;
+                u.onend = res; u.onerror = res;
+                speechSynthesis.speak(u);
+            });
+        }
+
+        setActivity('idle');
+        actEl.textContent = 'IDLE'; actEl.classList.remove('active');
+    }
+
+    // ── Init HUD labels ────────────────────────────────────────────────────
+    document.getElementById('dot-avatar').classList.remove('warn', 'error');
+    document.getElementById('av-digits').textContent = (isMobile ? 4000 : 8000).toLocaleString();
+    logActivity('Spatial environment: online');
+    logActivity('Avatar renderer: online');
+
+    // ── MiniKernel panel ──────────────────────────────────────────────────
+    const mkPanel = new MiniKernelPanel({
+        logActivity,
+        speak,
+        setActivity,
+    });
+    window.AIOS.minikernel = mkPanel;
+
+    // Auto-boot if eel is present; non-blocking — runs in background thread.
+    if (typeof eel !== 'undefined' && eel.minikernel_boot) {
+        mkPanel.boot();
+    }
+
+    // WS + Network card monitor
+    function updateNetworkStatus() {
+        const ws = controller?.ws;
+        const dotTTS = document.getElementById('dot-tts');
+        const wsStatus = document.getElementById('ws-status');
+        const wsLatency = document.getElementById('ws-latency');
+
+        if (ws?.readyState === WebSocket.OPEN) {
+            wsStatus.textContent = 'CONNECTED';
+            dotTTS.className = 'stat-dot';
+            // Measure latency via ping timestamp
+            const t0 = performance.now();
+            try {
+                ws.send(JSON.stringify({ type: 'ping', t: t0 }));
+            } catch(e) {}
+            wsLatency.textContent = wsLatency.textContent === '—' ? '<1ms' : wsLatency.textContent;
+        } else if (controller?.usingFallback) {
+            wsStatus.textContent = 'FALLBACK';
+            dotTTS.className = 'stat-dot warn';
+            wsLatency.textContent = 'N/A';
+        } else {
+            wsStatus.textContent = 'OFFLINE';
+            dotTTS.className = 'stat-dot error';
+            wsLatency.textContent = '—';
+        }
+    }
+    setInterval(updateNetworkStatus, 2000);
+    updateNetworkStatus();
+
+    // HUD state sync
+    setInterval(() => {
+        document.getElementById('av-volume').textContent =
+            avatarRenderer.state.volume.toFixed(2);
+        document.getElementById('av-emotion').textContent =
+            avatarRenderer.state.emotion.toUpperCase();
+    }, 200);
+
+    // ── Controls ───────────────────────────────────────────────────────────
+    document.getElementById('palette-select').addEventListener('change', e => {
+        setPalette(e.target.value);
+        logActivity('Palette: ' + e.target.value);
+    });
+    document.getElementById('activity-select').addEventListener('change', e => {
+        setActivity(e.target.value);
+        document.getElementById('av-activity').textContent = e.target.value.toUpperCase();
+        logActivity('Activity: ' + e.target.value);
+    });
+    document.getElementById('btn-speak').addEventListener('click', () => {
+        const t = document.getElementById('speech-text').value.trim();
+        if (t) speak(t);
+    });
+    
+    // Voice settings button handlers
+    document.getElementById('btn-add-wake')?.addEventListener('click', addCustomWakeWord);
+    document.getElementById('new-wake-word')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addCustomWakeWord();
+    });
+    document.getElementById('conversation-mode-toggle')?.addEventListener('change', toggleConversationMode);
+    document.getElementById('speech-text').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { const t = e.target.value.trim(); if (t) { speak(t); e.target.value = ''; } }
+    });
+    document.getElementById('btn-greet').addEventListener('click', () =>
+        speak('Welcome to the Lo-Tek cyberspace interface. Neural link established.', 'happy'));
+    document.getElementById('btn-glitch').addEventListener('click', () => {
+        setActivity('error'); logActivity('Glitch triggered');
+        setTimeout(() => setActivity('idle'), 1500);
+    });
+    let effectsOn = true;
+    document.getElementById('btn-effects').addEventListener('click', e => {
+        effectsOn = !effectsOn;
+        e.target.textContent = effectsOn ? 'CRT Off' : 'CRT On';
+        avatarRenderer.options.enableCRT       = effectsOn;
+        avatarRenderer.options.enableChromatic = effectsOn;
+        logActivity('CRT effects: ' + (effectsOn ? 'on' : 'off'));
+    });
+    document.getElementById('btn-demo').addEventListener('click', async () => {
+        logActivity('Running demo sequence…');
+        await speak('Initiating demonstration sequence.', 'happy');
+        await sleep(800);
+        setActivity('thinking');
+        document.getElementById('av-activity').textContent = 'THINKING';
+        document.getElementById('av-activity').classList.add('active');
+        await speak('Processing binary data streams across synaptic pathways.', 'thinking');
+        await sleep(1200);
+        setPalette('cyan');
+        document.getElementById('palette-select').value = 'cyan';
+        await speak('Neural interface recalibrated. Enhanced perception mode active.', 'neutral');
+        await sleep(1000);
+        setActivity('error');
+        document.getElementById('av-activity').textContent = 'ERROR';
+        await sleep(1200);
+        setPalette('matrix');
+        document.getElementById('palette-select').value = 'matrix';
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+        await speak('Demonstration complete. All systems nominal.', 'neutral');
+        logActivity('Demo complete');
+    });
+
+    document.getElementById('command-input').addEventListener('keydown', async e => {
+        if (e.key === 'Enter') {
+            const t = e.target.value.trim();
+            if (t) { e.target.value = ''; await processCmd(t); }
+        }
+    });
+
+    // ── Avatar Customizer wiring ──────────────────────────────────────
+    const custBtn = document.getElementById('cust-generate');
+    if (custBtn) {
+        const hexToLinearRgb = (hex) => {
+            const v = hex.replace('#', '');
+            const r = parseInt(v.substring(0, 2), 16) / 255;
+            const g = parseInt(v.substring(2, 4), 16) / 255;
+            const b = parseInt(v.substring(4, 6), 16) / 255;
+            return [r, g, b];
+        };
+        const status = document.getElementById('cust-status');
+        custBtn.addEventListener('click', async () => {
+            const params = {
+                smile_strength:    parseFloat(document.getElementById('cust-smile').value),
+                frown_strength:    parseFloat(document.getElementById('cust-frown').value),
+                surprise_strength: parseFloat(document.getElementById('cust-surprise').value),
+                wink_strength:     parseFloat(document.getElementById('cust-wink').value),
+                viseme_strength:   parseFloat(document.getElementById('cust-viseme').value),
+                subdivisions:      parseInt(document.getElementById('cust-subdivisions').value, 10),
+                skin_color:        hexToLinearRgb(document.getElementById('cust-skin').value),
+            };
+            status.textContent = 'Generating...';
+            custBtn.disabled = true;
+            try {
+                if (typeof eel === 'undefined' || !eel.generate_custom_avatar) {
+                    throw new Error('Backend unavailable');
+                }
+                const result = await eel.generate_custom_avatar(params)();
+                if (!result || !result.success) {
+                    throw new Error(result?.error || 'Unknown error');
+                }
+                status.textContent = '✓ Applied';
+                logActivity('Avatar regenerated');
+                // Swap the model in the React 3D avatar if it's mounted.
+                if (window.reactAvatar && window.ReactAvatarController) {
+                    try {
+                        window.reactAvatar.stopSpeaking?.();
+                        window.reactAvatar.destroy?.();
+                    } catch (destroyError) {
+                        console.warn('[Customizer] React avatar teardown drifted; rebuilding container', destroyError);
+                    }
+
+                    const currentContainer = window.reactAvatar.container
+                        || document.getElementById('react-avatar-container');
+                    let reactContainer = currentContainer;
+                    if (currentContainer?.parentNode) {
+                        const replacement = currentContainer.cloneNode(false);
+                        // Force the regenerated avatar's container visible.
+                        // The page-default container is display:none until
+                        // REACT_3D mode is entered; preserving that on the
+                        // clone would mount the new avatar into a hidden
+                        // box and the user would see nothing after pressing
+                        // Generate. Z-index 6 sits above env(1)/binary(2)/
+                        // vignette(4)/scanline(5) and below HUD(10).
+                        replacement.style.display = 'block';
+                        replacement.style.visibility = 'visible';
+                        replacement.style.opacity = '1';
+                        replacement.style.zIndex = '6';
+                        currentContainer.parentNode.replaceChild(replacement, currentContainer);
+                        reactContainer = replacement;
+                    }
+
+                    if (reactContainer) {
+                        window.reactAvatar = new window.ReactAvatarController(reactContainer, {
+                            modelUrl: result.model_url,
+                            agentId: 'aios',
+                            emotion: 'neutral',
+                        });
+                        if (window.avatarSwitcher) {
+                            window.avatarSwitcher.reactAvatar = window.reactAvatar;
+                            window.avatarSwitcher.reactContainer = reactContainer;
+                        }
+                        await window.reactAvatar.init();
+
+                        // Route through the mode switcher so the binary
+                        // canvas is hidden, the mode badge updates, and
+                        // the 'Current: …' indicator reflects 3D. Without
+                        // this, the binary avatar (z-index 2) stays on
+                        // screen alongside the 3D one and users assume
+                        // generation failed.
+                        if (window.avatarSwitcher && window.AvatarModeSwitcher) {
+                            try {
+                                const modes = window.AVATAR_MODES || { REACT_3D: 'react-3d' };
+                                await window.avatarSwitcher.setMode(modes.REACT_3D);
+                            } catch (modeErr) {
+                                console.warn('[Customizer] mode switch failed; container forced visible as fallback', modeErr);
+                                reactContainer.style.display = 'block';
+                            }
+                        }
+                    }
+                }
+                setTimeout(() => { status.textContent = ''; }, 3000);
+            } catch (err) {
+                status.textContent = '✗ ' + err.message;
+                console.error('[Customizer]', err);
+            } finally {
+                custBtn.disabled = false;
+            }
+        });
+    }
+
+    function handleAgentResult(msg) {
+        // Handle agent command results from WebSocket
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+
+        if (msg.message) {
+            logActivity(msg.success ? msg.message.slice(0, 200) : 'Error: ' + msg.message.slice(0, 200));
+        }
+        // The bridge auto-speaks via TTS after sending agent_result, so we
+        // only use browser TTS as a fallback if no audio_chunk arrives.
+        // The avatar-controller handles audio_chunk → speaking state already.
+    }
+
+    async function processCmd(text) {
+        const lower = text.toLowerCase();
+        logActivity('Cmd: ' + text);
+        const stripped = text.replace(/^(hey aios|aios|computer)\s*/i, '').trim();
+        if (!stripped) { await speak("I'm listening. What would you like me to do?"); return; }
+
+        // Try voice keyboard commands first (keyboard, annotation, dictation)
+        if (voiceKeyboard) {
+            const keyboardResult = await voiceKeyboard.processCommand(stripped);
+            if (keyboardResult && keyboardResult.success) {
+                logActivity(`Keyboard: ${keyboardResult.action}`);
+                return; // Command handled by keyboard controller
+            }
+        }
+
+        // Conversational shortcuts
+        if (/\b(hello|hi|greetings|hey)\b/i.test(stripped) && stripped.split(/\s+/).length <= 3) {
+            await speak('Hello. I am your AIOS neural interface agent. How can I assist you?', 'happy');
+            return;
+        }
+        if (/\b(who are you|what are you)\b/i.test(stripped)) {
+            await speak('I am the AIOS artificial intelligence agent. I can manage your system, open applications, check network status, and much more. Say help for a full list.', 'neutral');
+            return;
+        }
+
+        // Set avatar to thinking while processing
+        setActivity('thinking');
+        document.getElementById('av-activity').textContent = 'THINKING';
+        document.getElementById('av-activity').classList.add('active');
+
+        // ── 1. MiniKernel pipeline (intent → validate → execute) ───────────
+        if (mkPanel && mkPanel.status === 'running') {
+            const handled = await mkPanel.handleCommand(stripped);
+            if (handled) {
+                setActivity('idle');
+                document.getElementById('av-activity').textContent = 'IDLE';
+                document.getElementById('av-activity').classList.remove('active');
+                return;
+            }
+        }
+
+        // ── 2. Voice/system command handler (shutdown, restart, sleep, etc.) ─
+        if (typeof eel !== 'undefined' && eel.process_ui_voice_command) {
+            try {
+                const vcResult = await eel.process_ui_voice_command(stripped)();
+                if (vcResult && vcResult.action && vcResult.action !== 'unknown') {
+                    await handleVoiceCommandResult(vcResult);
+                    setActivity('idle');
+                    document.getElementById('av-activity').textContent = 'IDLE';
+                    document.getElementById('av-activity').classList.remove('active');
+                    return;
+                }
+            } catch (e) {
+                // not a voice command — fall through
+            }
+        }
+
+        // ── 3. Route through the legacy AIOS agent executor ────────────────
+        let result = null;
+        try {
+            if (typeof eel !== 'undefined' && eel.agent_execute) {
+                result = await eel.agent_execute(stripped)();
+            }
+        } catch (e) {
+            logActivity('Eel agent error: ' + e.message);
+        }
+
+        // Fallback: try WebSocket agent
+        if (!result && controller?.ws?.readyState === WebSocket.OPEN) {
+            try {
+                controller.ws.send(JSON.stringify({ type: 'agent_command', text: stripped }));
+                // The response will come via WebSocket message
+                setActivity('idle');
+                document.getElementById('av-activity').textContent = 'IDLE';
+                document.getElementById('av-activity').classList.remove('active');
+                return;
+            } catch(e) {}
+        }
+
+        // Fallback: client-side pattern matching for basic commands
+        if (!result) {
+            result = clientSideAgent(stripped);
+        }
+
+        // Display result
+        if (result) {
+            if (result.message) {
+                logActivity(result.message.slice(0, 200));
+            }
+
+            // ── Terminal action dispatch ────────────────────────────────
+            if (result.data && result.data.action === 'show_terminal') {
+                if (window.aiosTerminal) {
+                    const sid = result.data.session_id;
+                    window.aiosTerminal.show(sid || undefined);
+                }
+            }
+
+            const emotion = result.success ? 'neutral' : 'error';
+            const speakText = result.speak || result.message || 'Done.';
+            await speak(speakText, emotion);
+        } else {
+            await speak(`I'm not sure how to handle that. Try saying "help" to see what I can do.`, 'thinking');
+        }
+
+        setActivity('idle');
+        document.getElementById('av-activity').textContent = 'IDLE';
+        document.getElementById('av-activity').classList.remove('active');
+    }
+
+    /**
+     * Client-side agent for when no backend is available.
+     * Handles basic commands directly in the browser.
+     */
+    function clientSideAgent(text) {
+        const lower = text.toLowerCase();
+
+        if (/\b(help|what can you)\b/i.test(lower)) {
+            return {
+                success: true,
+                message: 'I can: list programs, open browser, browse files, create documents, take screenshots, check network, check bluetooth, install software, check compatibility, open apps, show system status, show hardware info, search files, list processes, and run commands.',
+                speak: 'I can list programs, open your browser, browse files, create documents, take screenshots, check network and bluetooth, install software, open applications, show system status, and more. Just tell me what you need.',
+            };
+        }
+        if (/\b(status|system|stats|cpu|memory)\b/i.test(lower)) {
+            const cpu = document.getElementById('cpu-val').textContent;
+            const mem = document.getElementById('mem-val').textContent;
+            const disk = document.getElementById('disk-val').textContent;
+            return {
+                success: true,
+                message: `CPU: ${cpu}, Memory: ${mem}, Disk: ${disk}`,
+                speak: `System status: CPU at ${cpu}, memory at ${mem}, disk at ${disk}. All systems operational.`,
+            };
+        }
+        if (/\b(open|launch)\s+(browser|chrome|firefox|safari)\b/i.test(lower)) {
+            window.open('https://www.google.com', '_blank');
+            return { success: true, message: 'Browser opened', speak: 'Opening browser.' };
+        }
+        if (/\b(terminal|shell|console)\b/i.test(lower)) {
+            if (window.aiosTerminal) window.aiosTerminal.toggle();
+            return { success: true, message: 'Terminal toggled', speak: 'Opening terminal.' };
+        }
+
+        return null;
+    }
+
+    // ── Voice input with advanced features ────────────────────────────────
+    let voiceInput = null;
+    let voiceCommands = null;
+    
+    (async function initVoice() {
+        if (!VoiceInputController.isSupported(
+            ['speech', 'wake-word', 'continuous', 'interim-results', 'auto-sleep', 'sleep-timeout']
+
+        )) {
+            
+            document.getElementById('dot-voice').className = 'stat-dot warn';
+            document.getElementById('voice-status').textContent = 'Unavailable';
+            logActivity('Voice input not supported in this browser');
+            return;
+        }
+
+        // Request microphone permission
+        try {
+            const hasPermission = await VoiceInputController.requestPermission();
+            if (!hasPermission) {
+                document.getElementById('dot-voice').className = 'stat-dot error';
+                document.getElementById('voice-status').textContent = 'Permission denied';
+                logActivity('Microphone permission denied');
+                return;
+            }
+        } catch(e) {
+            logActivity('Error requesting mic permission: ' + e.message);
+            return;
+        }
+
+        // Initialize voice input controller with silence detection
+        voiceInput = new VoiceInputController({
+            wakeWord: 'hey aios',
+            continuous: true,
+            interimResults: true,
+            autoSleep: true,
+            sleepTimeout: 60000, // 1 minute
+            enableSilenceDetection: true,
+            autoStopOnSilence: true,
+            silenceTimeout: 2000,
+            onWake: () => {
+                logActivity('Voice: Wake word detected');
+                document.getElementById('dot-voice').className = 'stat-dot active';
+                document.getElementById('voice-status').textContent = 'Listening...';
+            },
+            onSleep: () => {
+                logActivity('Voice: Sleeping (say "hey aios" to wake)');
+                document.getElementById('dot-voice').className = 'stat-dot';
+                document.getElementById('voice-status').textContent = 'Sleeping';
+            },
+            onTranscript: (data) => {
+                // voice-input.js delivers { interim, final, isFinal }.
+                const transcEl = document.getElementById('transcript');
+                if (!transcEl) return;
+                if (data.isFinal && data.final) {
+                    transcEl.innerHTML = `<span>${data.final}</span>`;
+                } else if (data.interim) {
+                    transcEl.innerHTML = `<span class="interim">${data.interim}</span>`;
+                }
+            },
+            onCommand: async (data) => {
+                // voice-input.js delivers { command, timestamp, inConversation }.
+                const cmd = typeof data === 'string' ? data : data?.command;
+                if (!cmd) return;
+                logActivity('Voice command: ' + cmd);
+                await processCmd(cmd);
+            },
+            onError: (error) => {
+                if (error !== 'no-speech' && error !== 'aborted') {
+                    logActivity('Voice error: ' + error);
+                }
+            }
+        });
+
+        // Initialize extended voice commands
+        voiceCommands = new ExtendedVoiceCommands(voiceInput);
+        
+        // Initialize voice keyboard controller (keyboard, annotation, dictation)
+        voiceKeyboard = new VoiceKeyboardController(voiceInput, {
+            showVisualFeedback: true,
+            enableAnnotations: true,
+            enableDictation: true
+        });
+        
+        // Make globally accessible for inline handlers
+        window.voiceKeyboard = voiceKeyboard;
+        
+        // Connect to avatar
+        if (controller) {
+            voiceInput.setAvatar(controller);
+        }
+
+        // OPTIONAL: Initialize integrated voice-desktop controller
+        // Only enable if you want desktop integration features
+        try {
+            // dynamicUI is created in a separate module script block below.
+            // If it hasn't initialized yet (or this page is loaded in a
+            // different order), avoid crashing and just skip desktop integration.
+            if (!window.dynamicUI) throw new Error('dynamicUI not initialized');
+
+            const integratedVoiceDesktop = new IntegratedVoiceDesktop(voiceInput, window.dynamicUI, {
+                enableVoiceDesktopControl: true,
+                enableMicrophoneToggle: false  // Don't create duplicate mic button
+            });
+
+            
+            // Initialize advanced desktop features
+            const advancedDesktop = new AdvancedDesktopBridge({
+                enableClipboard: true,
+                enableScreenshots: true,
+                enableNotifications: true
+            });
+
+            // Request notification permission
+            advancedDesktop.requestNotificationPermission();
+            
+            // Make globally available
+            window.AIOS = window.AIOS || {};
+            window.AIOS.integratedVoiceDesktop = integratedVoiceDesktop;
+            window.AIOS.advancedDesktop = advancedDesktop;
+            
+            console.log('[AIOS] Desktop integration features enabled');
+        } catch (error) {
+            console.warn('[AIOS] Desktop integration features disabled:', error);
+            // Continue without desktop features - existing functionality preserved
+        }
+
+        // Wire up mic button. Clicking the mic IS the wake intent, so we
+        // explicitly call wake() — otherwise the controller would still wait
+        // for "hey aios" before treating utterances as commands.
+        const micBtn = document.getElementById('mic-btn');
+        micBtn.addEventListener('click', () => {
+            if (voiceInput.isListening || voiceInput.isAwake) {
+                voiceInput.sleep();
+                voiceInput.stop();
+                micBtn.classList.remove('listening');
+                document.getElementById('dot-voice').className = 'stat-dot off';
+                document.getElementById('voice-status').textContent = 'Voice off';
+                logActivity('Voice input stopped');
+            } else {
+                const started = voiceInput.start();
+                if (started !== false) voiceInput.wake();
+                micBtn.classList.add('listening');
+                document.getElementById('dot-voice').className = 'stat-dot active';
+                document.getElementById('voice-status').textContent = 'Listening...';
+                logActivity('Voice input started');
+            }
+        });
+
+        // NB: VoiceInputController calls init() in its constructor; calling it
+        // again would tear down and recreate this.recognition, dropping state.
+        
+        // Store globally
+        window.AIOS = window.AIOS || {};
+        window.AIOS.voiceInput = voiceInput;
+        window.AIOS.voiceCommands = voiceCommands;
+        
+        // Initialize voice settings UI
+        updateWakeWordsList();
+        
+        // Add conversation mode callbacks
+        voiceInput.onConversationStart = () => {
+            logActivity('Conversation mode: Active');
+            document.getElementById('voice-status').textContent = 'In Conversation';
+        };
+        voiceInput.onConversationEnd = () => {
+            logActivity('Conversation mode: Ended');
+            document.getElementById('voice-status').textContent = 'Listening...';
+        };
+        
+        logActivity('Advanced voice input ready (say "hey aios" to wake)');
+        document.getElementById('dot-voice').className = 'stat-dot';
+        document.getElementById('voice-status').textContent = 'Sleeping';
+    })();
+
+    // Voice settings UI functions
+    function updateWakeWordsList() {
+        if (!voiceInput) return;
+        
+        const container = document.getElementById('wake-words-list');
+        const wakeWords = voiceInput.getWakeWords();
+        
+        container.innerHTML = wakeWords.map(word => `
+            <div style="background:#003333;border:1px solid #0ff;padding:2px 8px;border-radius:2px;display:flex;align-items:center;gap:6px;font-size:10px;">
+                <span>${word}</span>
+                ${wakeWords.length > 1 ? `<span onclick="removeWakeWord('${word}')" style="cursor:pointer;color:#ff0;font-weight:bold;font-size:12px;" title="Remove">×</span>` : ''}
+            </div>
+        `).join('');
+    }
+
+    function addCustomWakeWord() {
+        const input = document.getElementById('new-wake-word');
+        const wakeWord = input.value.trim().toLowerCase();
+        
+        if (!wakeWord) {
+            logActivity('Please enter a wake word');
+            return;
+        }
+        
+        if (voiceInput) {
+            voiceInput.addWakeWord(wakeWord);
+            updateWakeWordsList();
+            input.value = '';
+            logActivity(`Added wake word: "${wakeWord}"`);
+        }
+    }
+
+    function removeWakeWord(word) {
+        if (voiceInput) {
+            voiceInput.removeWakeWord(word);
+            updateWakeWordsList();
+            logActivity(`Removed wake word: "${word}"`);
+        }
+    }
+
+    function toggleConversationMode() {
+        const checkbox = document.getElementById('conversation-mode-toggle');
+        if (voiceInput) {
+            voiceInput.setConversationMode(checkbox.checked);
+            logActivity(`Conversation mode: ${checkbox.checked ? 'ON' : 'OFF'}`);
+        }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ── Auto-greet ─────────────────────────────────────────────────────────
+    setTimeout(() => speak('Welcome to the AIOS neural interface. Neural link established. All systems nominal.', 'happy'), 1500);
+
+    // ── Cleanup ────────────────────────────────────────────────────────────
+    window.addEventListener('beforeunload', () => {
+        envRenderer.destroy();
+        avatarRenderer.destroy();
+    }); 
+
+    // ═══════════════════════════════════════════════════════════════
+    // ENHANCED FEATURES: Theme Selector, Gestures, AI Assistant
+    // ═══════════════════════════════════════════════════════════════
+
+    // Theme management
+    const themes = {
+        cyber: { primary: '#00ffff', secondary: '#ff00ff', bg: '#0a0a1f' },
+        neon: { primary: '#ff006e', secondary: '#00ff9f', bg: '#1a0033' },
+        matrix: { primary: '#00ff00', secondary: '#00cc00', bg: '#000000' },
+        sunset: { primary: '#ff6b35', secondary: '#f7931e', bg: '#1a0f0f' },
+        ocean: { primary: '#0077be', secondary: '#00c9ff', bg: '#001f3f' }
+    };
+
+    let currentThemeIndex = 0;
+    const themeNames = Object.keys(themes);
+
+    // Theme selector
+    const themeBtn = document.getElementById('theme-selector-btn');
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            currentThemeIndex = (currentThemeIndex + 1) % themeNames.length;
+            const themeName = themeNames[currentThemeIndex];
+            const theme = themes[themeName];
+            
+            // Apply theme colors
+            document.documentElement.style.setProperty('--primary-color', theme.primary);
+            document.documentElement.style.setProperty('--secondary-color', theme.secondary);
+            
+            // Update avatar palette if available
+            if (window.AIOS?.avatar?.setColorPalette) {
+                window.AIOS.avatar.setColorPalette(themeName);
+            }
+            
+            themeBtn.textContent = `🎨 ${themeName.toUpperCase()}`;
+            logActivity(`Theme changed to ${themeName}`);
+        });
+    }
+
+    // Mode badge update
+    function updateModeBadge(mode) {
+        const badge = document.getElementById('mode-badge');
+        if (badge) {
+            badge.textContent = mode.toUpperCase() + ' MODE';
+            badge.style.animation = 'pulse-glow 0.5s ease-in-out';
+            setTimeout(() => badge.style.animation = 'pulse-glow 2s ease-in-out infinite', 500);
+        }
+    }
+
+    // Create theme manager
+            themeManager = new UIThemeManager(dynamicUI, avatar);
+
+            // Create mobile gesture handler
+            gestureHandler = new MobileGestureHandler(dynamicUI, {
+                swipeThreshold: 50,
+                doubleTapDelay: 300
+            });
+
+            // Make globally available
+            window.dynamicUI = dynamicUI;
+            window.avatar = avatar;
+            window.avatarRenderer = avatarRenderer;
+            window.envRenderer = envRenderer;
+            window.fileHandler = fileHandler;
+            window.themeManager = themeManager;
+            window.gestureHandler = gestureHandler;
+
+            // Setup event listeners for dynamic UI system
+            function setupEventListeners() {
+                // Mode change events
+                window.addEventListener('dynamicui:modeChanged', (e) => {
+                    const { from, to } = e.detail;
+                    console.log(`[Mode] ${from} → ${to}`);
+                    updateModeBadge(to);
+                    
+                    if (to === 'avatar') {
+                        avatar.setState('idle');
+                    } else {
+                        avatar.setState('background');
+                    }
+                });
+
+                // Theme change events
+                window.addEventListener('theme:themeChanged', (e) => {
+                    const { theme, config } = e.detail;
+                    console.log(`[Theme] Applied: ${config.name}`);
+                    logActivity(`Theme changed to ${config.name}`);
+                });
+
+                // File click events
+                window.addEventListener('dynamicui:fileClicked', async (e) => {
+                    const file = e.detail;
+                    console.log('[File] Clicked:', file);
+                    logActivity(`File opened: ${file.name}`);
+                });
+            }
+            
+            setupEventListeners();
+            
+    // Voice indicator
+    const voiceIndicator = document.getElementById('dot-voice');
+    if (voiceIndicator) {
+        voiceIndicator.className = 'stat-dot';
+        document.getElementById('voice-status').textContent = 'Initializing...';
+    }
+    
+
+    // Voice command handling
+    const voiceBtn = document.getElementById('voice-btn');
+        let recognition = null;
+
+        if (voiceBtn) {
+        voiceBtn.addEventListener('click', () => {
+            voiceBtn.classList.toggle('listening');
+            const isListening = voiceBtn.classList.contains('listening');
+            
+            if (isListening) {
+                logActivity('Voice input activated');
+                // Start voice recognition if available
+                if (window.AIOS?.startVoiceRecognition) {
+                    window.AIOS.startVoiceRecognition();
+                }
+            } else {
+                logActivity('Voice input deactivated');
+                if (window.AIOS?.stopVoiceRecognition) {
+                    window.AIOS.stopVoiceRecognition();
+                }
+            }
+        });
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                voiceBtn.classList.add('active');
+                console.log('[Voice] Listening...');
+            };
+
+            recognition.onend = () => {
+                voiceBtn.classList.remove('active');
+            };
+
+            recognition.onresult = async (event) => {
+                const text = event.results[0][0].transcript;
+                console.log('[Voice] Command:', text);
+                
+                // Process command
+                if (typeof eel !== 'undefined') {
+                    try {
+                        const result = await eel.process_ui_voice_command(text)();
+                        if (result) {
+                            await handleVoiceCommandResult(result);
+                        }
+                    } catch (err) {
+                        console.log('[Voice] Backend not available, using local processing');
+                        processVoiceCommandLocally(text);
+                    }
+                } else {
+                    processVoiceCommandLocally(text);
+                }
+            };
+
+            voiceBtn.addEventListener('click', () => {
+                recognition.start();
+            });
+        } else {
+            voiceBtn.style.display = 'none';
+            console.log('[Voice] Speech recognition not supported');
+        }
+
+        async function handleVoiceCommandResult(result) {
+            console.log('[Voice] Processing result:', result);
+
+            if (result.action === 'switch_mode') {
+                await handleModeSwitch(result.mode, result.data);
+            } else if (result.action === 'execute_command') {
+                await executeSystemCommand(result.command, result.data);
+            } else if (result.action === 'confirm_and_execute') {
+                let confirmed = false;
+                if (window.showConfirmation) {
+                    confirmed = await window.showConfirmation(result.confirmation_message);
+                } else {
+                    confirmed = confirm(result.confirmation_message);
+                }
+                if (confirmed) {
+                    await executeSystemCommand(result.command, result.data || {});
+                } else {
+                    await speak('Cancelled');
+                    logActivity('Action cancelled by user');
+                }
+            } else if (result.action === 'request_input') {
+                alert(result.message);
+            }
+        }
+
+        async function processVoiceCommandLocally(text) {
+            const result = await clientSideAgent(text);
+            if (result) {
+                await handleVoiceCommandResult(result);
+            }
+        }
+    }
+
+    // Gesture help
+    const gestureHelpBtn = document.getElementById('gesture-help-btn');
+    if (gestureHelpBtn) {
+        gestureHelpBtn.addEventListener('click', () => {
+            const helpText = `
+GESTURE CONTROLS:
+• Swipe Right: Next step
+• Swipe Left: Previous step  
+• Swipe Up: Show help
+• Swipe Down: Hide panels
+• Double Tap: Toggle voice
+• Pinch: Zoom avatar
+            `.trim();
+            
+            if (window.AIOS?.avatar?.speak) {
+                window.AIOS.avatar.speak(helpText, 'neutral');
+            }
+            
+            alert(helpText);
+            logActivity('Gesture help displayed');
+        });
+    }
+
+    // AI Assistant
+    const aiAssistantBtn = document.getElementById('ai-assistant-btn');
+    if (aiAssistantBtn) {
+        aiAssistantBtn.addEventListener('click', () => {
+            logActivity('AI Assistant activated');
+            
+            const prompt = window.prompt('Ask AI Assistant:', '');
+            if (prompt && prompt.trim()) {
+                processAIQuery(prompt);
+            }
+        });
+    }
+
+    async function processAIQuery(query) {
+        logActivity(`AI Query: ${query}`);
+        
+        // Simple response system (can be extended with actual AI)
+        const responses = {
+            'help': 'I can help you navigate AIOS, explain features, or control the avatar.',
+            'status': 'All systems operational. Avatar active, voice ready.',
+            'commands': 'Available: next, back, help, settings, desktop, terminal, browser',
+            'theme': 'Use the theme button to switch color schemes.',
+            'voice': 'Click the microphone button to activate voice commands.'
+        };
+        
+        let response = 'I am your AI assistant. I can help with navigation, commands, and system status.';
+        
+        for (const [keyword, reply] of Object.entries(responses)) {
+            if (query.toLowerCase().includes(keyword)) {
+                response = reply;
+                break;
+            }
+        }
+        
+        if (window.AIOS?.avatar?.speak) {
+            window.AIOS.avatar.speak(response, 'neutral');
+        } else {
+            alert('AI: ' + response);
+        }
+        
+        logActivity(`AI Response: ${response}`);
+    }
+
+    // Mobile gesture support
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+
+    function handleGesture() {
+        const diffX = touchEndX - touchStartX;
+        const diffY = touchEndY - touchStartY;
+        const threshold = 50;
+
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (diffX > threshold) {
+                // Swipe right
+                if (typeof nextButton !== 'undefined' && nextButton) {
+                    nextButton.click();
+                }
+            } else if (diffX < -threshold) {
+                // Swipe left
+                if (typeof prevButton !== 'undefined' && prevButton) {
+                    prevButton.click();
+                }
+            }
+        } else {
+            if (diffY > threshold) {
+                // Swipe down - hide panels
+                togglePanels(false);
+            } else if (diffY < -threshold) {
+                // Swipe up - show help
+                if (gestureHelpBtn) gestureHelpBtn.click();
+            }
+        }
+    }
+
+    document.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    });
+
+    document.addEventListener('touchend', e => {
+        touchEndX = e.changedTouches[0].screenX;
+        touchEndY = e.changedTouches[0].screenY;
+        handleGesture();
+    });
+
+    function togglePanels(show) {
+        const panels = ['left-panel', 'right-panel', 'top-bar', 'bottom-bar'];
+        panels.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.style.opacity = show ? '1' : '0.1';
+                el.style.pointerEvents = show ? 'auto' : 'none';
+            }
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+        if (e.ctrlKey || e.metaKey) {
+            switch(e.key) {
+                case 't':
+                    e.preventDefault();
+                    if (themeBtn) themeBtn.click();
+                    break;
+                case 'g':
+                    e.preventDefault();
+                    if (gestureHelpBtn) gestureHelpBtn.click();
+                    break;
+                case 'a':
+                    e.preventDefault();
+                    if (aiAssistantBtn) aiAssistantBtn.click();
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    if (voiceBtn) voiceBtn.click();
+                    break;
+            }
+        }
+    });
+
+    // Initialize
+    
+    // ═══════════════════════════════════════════════════════════════
+    // LIPSYNC & VOICE SYSTEM INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════
+
+    // Lipsync avatar initialization
+    async function initLipSyncAvatar() {
+        console.log('[AIOS] Initializing Lip-Sync Avatar...');
+        
+        const container = document.getElementById('lipsync-avatar-container');
+        const lipsyncInfo = document.getElementById('lipsync-info');
+        const lipsyncMode = document.getElementById('lipsync-mode');
+        const visemeDisplay = document.getElementById('current-viseme');
+        
+        if (!container) {
+            console.warn('[AIOS] Lipsync container not found');
+            return;
+        }
+        
+        try {
+            // Create lip-sync avatar (uses binary fallback if no 3D model)
+            window.AIOS.lipSyncAvatar = new LipSyncAvatar(container, {
+                modelUrl: '',  // No 3D model URL = use binary fallback
+                useBinaryFallback: true,
+                onVisemeChange: (viseme) => {
+                    if (visemeDisplay) {
+                        visemeDisplay.textContent = viseme || '—';
+                    }
+                }
+            });
+            
+            await window.AIOS.lipSyncAvatar.init();
+            
+            if (lipsyncMode) lipsyncMode.textContent = 'Binary + Phoneme';
+            if (lipsyncInfo) lipsyncInfo.style.display = 'block';
+            
+            console.log('[AIOS] Lip-Sync Avatar initialized');
+            logActivity('Lip-sync avatar ready');
+            
+        } catch (error) {
+            console.error('[AIOS] Lip-Sync Avatar error:', error);
+            if (lipsyncMode) lipsyncMode.textContent = 'Error';
+            logActivity('Lip-sync initialization failed');
+        }
+    }
+
+    // Voice input system initialization
+    async function initVoiceSystem() {
+        console.log('[AIOS] Initializing Voice System...');
+        
+        const voiceContainer = document.getElementById('voice-ui-container');
+        const wakeIndicator = document.getElementById('wake-word-indicator');
+        
+        if (!voiceContainer) {
+            console.warn('[AIOS] Voice container not found');
+            return;
+        }
+        
+        try {
+            // Check if Web Speech API is supported
+            if (!VoiceInputController.isSupported()) {
+                console.warn('[AIOS] Web Speech API not supported');
+                logActivity('Voice input not available in this browser');
+                return;
+            }
+            
+            // Create Voice UI
+            window.AIOS.voiceUI = new VoiceUI(voiceContainer, {
+                showHints: true,
+                theme: 'cyber'
+            });
+            
+            // The mic-btn IIFE above already constructs the primary
+            // VoiceInputController. Only build a secondary one if no
+            // controller has been registered yet — otherwise two recognition
+            // instances fight for the single browser SpeechRecognition slot.
+            if (window.AIOS.voiceInput) {
+                console.log('[AIOS] Reusing existing voiceInput from mic-btn init');
+                if (window.AIOS.avatar) {
+                    window.AIOS.voiceInput.setAvatar(window.AIOS.avatar);
+                }
+                return;
+            }
+
+            // Create Voice Input Controller
+            window.AIOS.voiceInput = new VoiceInputController({
+                wakeWords: ['hey aios', 'aios', 'computer'],
+                continuous: true,
+                autoStart: false,
+                conversationTimeout: 10000,
+                sleepTimeout: 30000,
+
+                onTranscript: (data) => {
+                    console.log('[Voice] Transcript:', data);
+                    if (window.AIOS.voiceUI) {
+                        window.AIOS.voiceUI.updateTranscript(data.interim, data.final);
+                    }
+                },
+                
+                onCommand: async (commandData) => {
+                    console.log('[Voice] Command received:', commandData.command);
+                    logActivity(`Voice: ${commandData.command}`);
+                    
+                    // Process command through voice backend
+                    await processVoiceCommand(commandData.command);
+                },
+                
+                onWake: () => {
+                    console.log('[Voice] Wake word detected!');
+                    if (wakeIndicator) wakeIndicator.classList.add('active');
+                    logActivity('Wake word detected');
+                },
+                
+                onSleep: () => {
+                    console.log('[Voice] Going to sleep...');
+                    if (wakeIndicator) wakeIndicator.classList.remove('active');
+                    logActivity('Voice sleep mode');
+                },
+                
+                onStateChange: (state) => {
+                    console.log('[Voice] State:', state);
+                    if (window.AIOS.voiceUI) {
+                        window.AIOS.voiceUI.setState(state);
+                    }
+                    
+                    // Update voice indicator button
+                    const voiceBtn = document.getElementById('voice-btn');
+                    if (voiceBtn) {
+                        if (state === 'listening' || state === 'recognizing') {
+                            voiceBtn.classList.add('listening');
+                        } else {
+                            voiceBtn.classList.remove('listening');
+                        }
+                    }
+                }
+            });
+            
+            // Link avatar to voice controller
+            if (window.AIOS.avatar) {
+                window.AIOS.voiceInput.setAvatar(window.AIOS.avatar);
+            }
+            
+            console.log('[AIOS] Voice System initialized');
+            logActivity('Voice system ready');
+            
+            // Show hints
+            if (window.AIOS.voiceUI) {
+                window.AIOS.voiceUI.showHints([
+                    'Say "Hey AIOS" to activate',
+                    'Try: "next", "help", "show desktop"',
+                    'Or click 🎤 to toggle voice'
+                ]);
+            }
+            
+        } catch (error) {
+            console.error('[AIOS] Voice System error:', error);
+            logActivity('Voice initialization failed');
+        }
+    }
+
+    // Process voice commands
+    async function processVoiceCommand(command) {
+        const lowerCmd = command.toLowerCase().trim();
+        
+        // Extended voice commands
+        const extendedCommands = new ExtendedVoiceCommands({
+            onNavigate: (direction) => {
+                if (direction === 'next' && typeof nextButton !== 'undefined') {
+                    nextButton.click();
+                } else if (direction === 'back' && typeof prevButton !== 'undefined') {
+                    prevButton.click();
+                }
+            },
+            onAction: (action, target) => {
+                console.log('[Voice] Action:', action, target);
+                
+                // Handle dynamic UI commands
+                if (window.dynamicUI) {
+                    if (lowerCmd.includes('desktop')) {
+                        window.dynamicUI.showDesktop();
+                    } else if (lowerCmd.includes('terminal')) {
+                        window.dynamicUI.showTerminal();
+                    } else if (lowerCmd.includes('browser')) {
+                        window.dynamicUI.showBrowser();
+                    } else if (lowerCmd.includes('back to avatar')) {
+                        window.dynamicUI.backToAvatar();
+                    }
+                }
+                
+                // Handle theme switching
+                if (lowerCmd.includes('theme')) {
+                    const themeBtn = document.getElementById('theme-selector-btn');
+                    if (themeBtn) themeBtn.click();
+                }
+                
+                // Handle AI assistant
+                if (lowerCmd.includes('ai') || lowerCmd.includes('assistant')) {
+                    const aiBtn = document.getElementById('ai-assistant-btn');
+                    if (aiBtn) aiBtn.click();
+                }
+            }
+        });
+        
+        // Process through extended commands
+        extendedCommands.process(command);
+        
+        // Also speak response if avatar available
+        if (window.AIOS.avatar && window.AIOS.avatar.speak) {
+            const response = getCommandResponse(command);
+            if (response) {
+                await window.AIOS.avatar.speak(response, 'neutral');
+            }
+        }
+    }
+
+    // Get response for voice commands
+    function getCommandResponse(command) {
+        const lowerCmd = command.toLowerCase();
+        
+        if (lowerCmd.includes('next')) return 'Moving to next step';
+        if (lowerCmd.includes('back')) return 'Going back';
+        if (lowerCmd.includes('help')) return 'How can I help you?';
+        if (lowerCmd.includes('desktop')) return 'Opening desktop view';
+        if (lowerCmd.includes('terminal')) return 'Opening terminal';
+        if (lowerCmd.includes('theme')) return 'Switching theme';
+        
+        return null;
+    }
+
+    // Register Eel callback for viseme data from Piper backend
+    if (typeof eel !== 'undefined') {
+        eel.expose(receive_viseme_data);
+        
+        function receive_viseme_data(data) {
+            console.log('[AIOS] Received viseme data:', data);
+            
+            if (window.AIOS.lipSyncAvatar) {
+                window.AIOS.lipSyncAvatar.handleVisemeData(data);
+            }
+        }
+    }
+
+    // Enhanced speak function with lipsync support
+    async function speakWithLipsync(text, emotion = 'neutral') {
+        console.log('[AIOS] Speaking with lipsync:', text);
+        
+        try {
+            // Try Piper backend with lipsync
+            if (typeof eel !== 'undefined' && eel.speak_with_lipsync) {
+                await eel.speak_with_lipsync(text)();
+            } else if (window.AIOS.lipSyncAvatar) {
+                // Fallback to avatar's built-in speak
+                await window.AIOS.lipSyncAvatar.speak(text, emotion);
+            } else if (window.AIOS.avatar && window.AIOS.avatar.speak) {
+                // Last resort: regular avatar speak
+                await window.AIOS.avatar.speak(text, emotion);
+            }
+        } catch (error) {
+            console.error('[AIOS] Speak error:', error);
+        }
+    }
+
+    // Override queueOrSpeak to use lipsync
+    const originalQueueOrSpeak = window.queueOrSpeak;
+    window.queueOrSpeak = function(text, emotion) {
+        if (window.AIOS.lipSyncAvatar) {
+            speakWithLipsync(text, emotion);
+        } else if (originalQueueOrSpeak) {
+            originalQueueOrSpeak(text, emotion);
+        }
+    };
+
+
+    
+    // Update voice indicator button with new voice system
+    if (voiceBtn && window.AIOS) {
+        // Remove old listener if exists
+        const newVoiceBtn = voiceBtn.cloneNode(true);
+        voiceBtn.parentNode.replaceChild(newVoiceBtn, voiceBtn);
+        
+        newVoiceBtn.addEventListener('click', () => {
+            if (window.AIOS.voiceInput) {
+                window.AIOS.voiceInput.toggle();
+                logActivity('Voice input toggled');
+            } else {
+                console.warn('[AIOS] Voice system not initialized yet');
+                alert('Voice system is initializing. Please wait...');
+            }
+        });
+    }
+
+    console.log('Enhanced features loaded: Themes, Gestures, AI Assistant, Voice');
+    logActivity('Enhanced UI features initialized');
+
+
+    // Route phoneme/viseme payloads from the Piper backend to whichever
+    // avatar is currently visible. LipSyncAvatar.registerVisemeListener()
+    // installs itself as window.receive_viseme_data on init; this wrapper
+    // runs AFTER that and dispatches by the active mode so the GLB-driven
+    // React 3D avatar (REACT_3D mode) actually receives the phonemes
+    // instead of having them swallowed by the binary fallback.
+    function wireVisemeRouter() {
+        const binaryHandler = window.receive_viseme_data;
+        const router = (payload) => {
+            try {
+                const mode = window.avatarSwitcher
+                    ? window.avatarSwitcher.getMode()
+                    : null;
+                if (mode === 'react3d' && window.reactAvatar) {
+                    // React 3D mode: feed audio + phonemes to the GLB driver.
+                    window.reactAvatar.speak('', {
+                        audio: payload.audio,
+                        phonemes: payload.phonemes,
+                    });
+                    return;
+                }
+                // Binary / Dynamic / unknown: fall back to LipSyncAvatar
+                // (plays audio, drives binary visualization).
+                if (typeof binaryHandler === 'function') {
+                    binaryHandler(payload);
+                }
+            } catch (err) {
+                console.error('[AIOS] viseme router error:', err);
+            }
+        };
+        window.receive_viseme_data = router;
+        if (typeof eel !== 'undefined' && eel.expose) {
+            eel.expose(router, 'receive_viseme_data');
+        }
+        console.log('[AIOS] Viseme router wired (REACT_3D → GLB, others → binary)');
+    }
+
+    // Initialize lipsync and voice systems on startup
+    async function initAdvancedFeatures() {
+        console.log('[AIOS] Initializing advanced features...');
+
+        // Wait a bit for main avatar to initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Initialize lipsync avatar (this registers window.receive_viseme_data)
+        await initLipSyncAvatar();
+
+        // Wrap the receiver so REACT_3D mode gets the phoneme stream.
+        wireVisemeRouter();
+
+        // Initialize voice system
+        await initVoiceSystem();
+
+        console.log('[AIOS] Advanced features initialization complete');
+        logActivity('All systems ready');
+    }
+
+    // Start advanced features after main initialization
+    setTimeout(() => {
+        initAdvancedFeatures().catch(err => {
+            console.error('[AIOS] Advanced features init error:', err);
+        });
+    }, 500);
+
+</script>
+
+<!-- Binary Avatar and Dynamic UI System -->
+    <script type="module">
+        import { BinaryAvatarRenderer } from './binary-avatar.js';
+        import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
+        import { ReactAvatarController } from './react-avatar-bridge.js';
+        import { AvatarModeSwitcher, AVATAR_MODES } from './avatar-mode-switcher.js';
+
+        // Resolve model URL from query string (mirrors Block 1 — module scopes are isolated)
+        const _pageModel = new URLSearchParams(window.location.search).get('model');
+
+        console.log('[AIOS] Initializing Dynamic Avatar Interface...');
+
+
+        let uptime = 0;
+        let reactAvatar = null;
+        let avatarSwitcher = null;
+        //let avatar = null;  // Declare avatar variable
+        let dynamicUI = null;  // Declare dynamicUI variable
+
+        // Initialize
+        async function init() {
+            const container = document.getElementById('avatar-container');
+            
+            // Create binary avatar
+            avatar = new BinaryAvatarRenderer(container, {
+                palette: 'cyan',
+                particleCount: 8000,
+                showEnvironment: true
+            });
+
+            avatar.setState('initializing');
+            
+            // Create React 3D avatar
+            const reactContainer = document.getElementById('react-avatar-container');
+            const reactAvatarModelUrl = _pageModel
+                ? (_pageModel.startsWith('/') ? _pageModel : `/models/${_pageModel}`)
+                : '/models/avatar.glb';
+
+            reactAvatar = new ReactAvatarController(reactContainer, {
+                modelUrl: reactAvatarModelUrl,
+                agentId: 'aios',
+                emotion: 'neutral'
+            });
+
+            
+            // Create dynamic UI manager FIRST so the switcher can include
+            // DYNAMIC in its toggle cycle. Order matters here — switcher.init()
+            // captures the reference once and won't pick up a later assignment.
+            dynamicUI = new DynamicUIManager(container, avatar, {
+                transitionDuration: 800,
+                enableParticleEffects: true,
+                enableNativeDesktop: true
+            });
+
+            // NB: do NOT instantiate a second LipSyncAvatar here. The React 3D
+            // avatar (reactAvatar above) is the talking-head used by the
+            // switcher's REACT_3D mode — it loads /models/avatar.glb and drives
+            // morph-target lip sync directly. A separate LipSyncAvatar
+            // instance lives at window.AIOS.lipSyncAvatar (initLipSyncAvatar)
+            // for the binary fallback display.
+
+            // Create avatar mode switcher and wire all three modes
+            avatarSwitcher = new AvatarModeSwitcher();
+
+            // Set up mode change listener BEFORE init() so the very first
+            // setMode() call (which fires inside init) updates the label too.
+            avatarSwitcher.onModeChange = (newMode, oldMode) => {
+                console.log(`[Avatar] Mode switched: ${oldMode} → ${newMode}`);
+                updateAvatarModeUI(newMode);
+            };
+
+            // Toggle cycle: Binary → 3D Lip-Sync → Dynamic UI → Binary.
+            // Signature is init(binaryAvatar, reactAvatar, dynamicUI) — see
+            // avatar-mode-switcher.js. If dynamicUI wasn't created, the
+            // switcher silently falls back to the original two-mode flip.
+            avatarSwitcher.init(avatar, reactAvatar, dynamicUI);
+
+            // Make globally available
+            window.dynamicUI = dynamicUI;
+            window.avatar = avatar;
+            window.reactAvatar = reactAvatar;
+            window.avatarSwitcher = avatarSwitcher;
+            // Expose constructors so the avatar customizer can re-instantiate
+            // the React 3D avatar with a freshly generated GLB.
+            window.ReactAvatarController = ReactAvatarController;
+            window.AvatarModeSwitcher = AvatarModeSwitcher;
+            window.AVATAR_MODES = AVATAR_MODES;
+
+            // Listen for mode changes
+            window.addEventListener('dynamicui:modeChanged', (e) => {
+                const { from, to } = e.detail;
+                console.log(`[DynamicUI] Mode changed: ${from} → ${to}`);
+                updateModeIndicator(to);
+                
+                // Update avatar state based on mode
+                if (to === 'avatar') {
+                    avatar.setState('idle');
+                } else {
+                    avatar.setState('background');
+                }
+            });
+
+            // Listen for file clicks
+            window.addEventListener('dynamicui:fileClicked', (e) => {
+                console.log('[DynamicUI] File clicked:', e.detail);
+            });
+
+            // Set initial state
+            avatar.setState('idle');
+            
+            // Set up avatar mode toggle button
+            setupAvatarModeToggle();
+
+            console.log('[AIOS] Dynamic Avatar Interface ready!');
+
+            // Load sample files from backend if available
+            if (typeof eel !== 'undefined') {
+                try {
+                    const files = await eel.get_desktop_files()();
+                    console.log('[AIOS] Loaded files from backend:', files);
+                } catch (err) {
+                    console.log('[AIOS] Running without backend, using sample data');
+                }
+            }
+        }
+
+        function updateModeIndicator(mode) {
+            const badge = document.getElementById('mode-badge');
+            const statusValue = document.getElementById('ui-mode');
+            const modeText = mode.toUpperCase() + ' MODE';
+
+            if (badge) badge.textContent = modeText;
+            if (statusValue) statusValue.textContent = mode.toUpperCase();
+        }
+        window.updateModeIndicator = updateModeIndicator;
+        
+        function updateAvatarModeUI(mode) {
+            const modeNames = {
+                [AVATAR_MODES.BINARY]:   'Binary',
+                [AVATAR_MODES.REACT_3D]: 'LipSync',
+                [AVATAR_MODES.DYNAMIC]:  'Dynamic UI',
+            };
+            const label = modeNames[mode] || mode;
+            const current = document.getElementById('current-avatar-mode');
+            if (current) current.textContent = label;
+            // The "<X> Mode Enabled" line below the toggle reflects the same
+            // label so the user always sees the active mode in one place.
+            const dynamicSpan = document.getElementById('dynamic-avatar-mode');
+            if (dynamicSpan) dynamicSpan.textContent = label;
+        }
+        
+        // Set up avatar mode toggle button — navigates to the native Dynamic Interface
+        function setupAvatarModeToggle() {
+            if (window.__avatarToggleBound) return;
+            window.__avatarToggleBound = true;
+
+            document.addEventListener('click', (event) => {
+                const toggleBtn = event.target.closest?.('#toggle-avatar-mode');
+                if (!toggleBtn) return;
+
+                // Navigate to the full-screen dynamic avatar OS interface
+                window.location.href = 'index-dynamic-avatar.html';
+            });
+        }
+
+        // Sample functions
+        window.showSampleDocument = async function() {
+            const sampleContent = `
+                <h1>AIOS Dynamic UI System</h1>
+                <h2>Overview</h2>
+                <p>The AIOS Dynamic UI System enables seamless transformation between the binary avatar and various UI modes.</p>
+                
+                <h2>Available Modes</h2>
+                <ul>
+                    <li><strong>Avatar Mode</strong> - Interactive 3D binary avatar</li>
+                    <li><strong>Desktop Mode</strong> - File browser and folder navigation</li>
+                    <li><strong>Document Mode</strong> - Text and PDF viewer</li>
+                    <li><strong>Media Mode</strong> - Image and video player</li>
+                    <li><strong>Terminal Mode</strong> - Command line interface</li>
+                    <li><strong>Browser Mode</strong> - Web content viewer</li>
+                </ul>
+
+                <h2>Voice Commands</h2>
+                <p>Control the interface using natural language:</p>
+                <ul>
+                    <li>"Show my files" - Opens desktop view</li>
+                    <li>"Open terminal" - Launches terminal</li>
+                    <li>"Back to avatar" - Returns to avatar mode</li>
+                    <li>"Show me [filename]" - Opens specific file</li>
+                </ul>
+
+                <h2>Features</h2>
+                <ul>
+                    <li>Smooth transitions with particle effects</li>
+                    <li>Voice-activated UI transformations</li>
+                    <li>File system integration</li>
+                    <li>Multi-modal content viewing</li>
+                    <li>Real-time avatar state synchronization</li>
+                </ul>
+            `;
+            
+            await dynamicUI.showDocument('AIOS Dynamic UI System', sampleContent);
+        };
+
+        window.showSampleMedia = async function() {
+            // Use a placeholder image
+            await dynamicUI.showMedia('image', 'AIOSAvatarImg.png', 'AIOS Avatar');
+        };
+        
+        async function executeSystemCommand(command, data) {
+            console.log('[System] Executing command:', command, data);
+            
+            if (typeof eel !== 'undefined') {
+                try {
+                    const result = await eel.execute_system_command(command, data)();
+                    console.log('[System] Result:', result);
+                    
+                    // Show result in terminal
+                    if (result.message) {
+                        dynamicUI.showTerminal(result.message);
+                    }
+                    
+                    // Speak result if available
+                    if (result.speak && 'speechSynthesis' in window) {
+                        const utterance = new SpeechSynthesisUtterance(result.speak);
+                        speechSynthesis.speak(utterance);
+                    }
+                } catch (err) {
+                    console.error('[System] Command failed:', err);
+                    dynamicUI.showTerminal(`Error: ${err.message}`);
+                }
+            } else {
+                console.log('[System] Backend not available');
+                dynamicUI.showTerminal('Backend connection required for system commands');
+            }
+        }
+
+        function processVoiceCommandLocally(text) {
+            const lower = text.toLowerCase();
+            
+            if (lower.includes('show') && (lower.includes('files') || lower.includes('desktop'))) {
+                dynamicUI.showDesktop(getSampleFiles(), '/home');
+            } else if (lower.includes('terminal')) {
+                dynamicUI.showTerminal();
+            } else if (lower.includes('back') || lower.includes('avatar')) {
+                dynamicUI.backToAvatar();
+            } else if (lower.includes('document')) {
+                showSampleDocument();
+            } else if (lower.includes('media') || lower.includes('image')) {
+                showSampleMedia();
+            } else if (lower.includes('browser')) {
+                dynamicUI.showBrowser('about:blank');
+            } else if (lower.includes('status')) {
+                dynamicUI.showTerminal('System status: Online\nBackend: Not connected');
+            } else if (lower.includes('notification')) {
+                showNotifications();
+            }
+        }
+
+        async function handleModeSwitch(mode, data) {
+            switch (mode) {
+                case 'desktop':
+                    if (typeof eel !== 'undefined' && !data.files) {
+                        const result = await eel.get_desktop_files(data.path)();
+                        dynamicUI.showDesktop(result.files, result.path);
+                    } else {
+                        dynamicUI.showDesktop(data.files || getSampleFiles(), data.path || '/home');
+                    }
+                    break;
+                case 'document':
+                    if (typeof eel !== 'undefined' && data.filename) {
+                        const result = await eel.get_document_content(data.filename)();
+                        dynamicUI.showDocument(result.title, result.content);
+                    } else {
+                        showSampleDocument();
+                    }
+                    break;
+                case 'media':
+                    dynamicUI.showMedia(data.type, data.url || data.filename, data.title);
+                    break;
+                case 'terminal':
+                    dynamicUI.showTerminal(data.message);
+                    break;
+                case 'browser':
+                    dynamicUI.showBrowser(data.url, data.content);
+                    break;
+                case 'notifications':
+                    await showNotifications();
+                    break;
+                case 'avatar':
+                    dynamicUI.backToAvatar();
+                    break;
+            }
+        }
+        
+        async function showNotifications() {
+            let notifications = [];
+            
+            if (typeof eel !== 'undefined') {
+                try {
+                    notifications = await eel.get_system_notifications()();
+                } catch (err) {
+                    console.log('[Notifications] Backend not available');
+                }
+            }
+            
+            // Add sample notifications if none available
+            if (notifications.length === 0) {
+                notifications = [
+                    {
+                        id: 'welcome',
+                        type: 'info',
+                        title: 'Welcome to AIOS',
+                        message: 'Dynamic Neural Interface Active',
+                        timestamp: 'now'
+                    },
+                    {
+                        id: 'voice',
+                        type: 'success',
+                        title: 'Voice Commands Ready',
+                        message: 'Click the microphone to use voice control',
+                        timestamp: '1 min ago'
+                    }
+                ];
+            }
+            
+            // Create notifications HTML
+            const notifHtml = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #00ffff; margin-bottom: 20px;">Notifications</h2>
+                    ${notifications.map(n => `
+                        <div style="
+                            background: rgba(0, 255, 255, 0.05);
+                            border: 1px solid rgba(0, 255, 255, 0.2);
+                            padding: 15px;
+                            margin-bottom: 10px;
+                            border-radius: 4px;
+                        ">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="color: #00ffff;">${n.title}</strong>
+                                <span style="color: #00ffff88; font-size: 0.8em;">${n.timestamp}</span>
+                            </div>
+                            <p style="margin: 10px 0 0 0; color: #00ffff;">${n.message}</p>
+                        </div>
+                    `).join('')}
+                    <button onclick="window.clearNotifications()" style="
+                        background: rgba(0, 255, 255, 0.1);
+                        border: 1px solid #00ffff;
+                        color: #00ffff;
+                        padding: 10px 20px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        margin-top: 10px;
+                    ">Clear All</button>
+                </div>
+            `;
+            
+            dynamicUI.showDocument('System Notifications', notifHtml);
+        }
+        
+        window.clearNotifications = async function() {
+            if (typeof eel !== 'undefined') {
+                try {
+                    await eel.clear_system_notifications()();
+                } catch (err) {
+                    console.log('[Notifications] Backend not available');
+                }
+            }
+            dynamicUI.backToAvatar();
+        };
+
+        function getSampleFiles() {
+            return [
+                { name: 'Documents', type: 'folder', size: '' },
+                { name: 'Pictures', type: 'folder', size: '' },
+                { name: 'Videos', type: 'folder', size: '' },
+                { name: 'Projects', type: 'folder', size: '' },
+                { name: 'readme.txt', type: 'document', size: '2.4 KB' },
+                { name: 'aios_guide.md', type: 'document', size: '15.8 KB' },
+                { name: 'avatar.png', type: 'image', size: '256 KB', url: 'AIOSAvatarImg.png' },
+                { name: 'demo.mp4', type: 'video', size: '4.2 MB' },
+                { name: 'kernel.py', type: 'code', size: '8.1 KB' },
+                { name: 'config.json', type: 'code', size: '1.2 KB' },
+            ];
+        }
+
+        // Uptime counter
+        setInterval(() => {
+            uptime++;
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            const seconds = uptime % 60;
+            const uptimeEl = document.getElementById('uptime');
+            if (uptimeEl) {
+                uptimeEl.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+
+        // Initialize on load (setupAvatarModeToggle is called inside init()
+        // after avatarSwitcher is ready, so no early call needed here)
+        init();
+    </script>
+<!-- Binary avatar and React avatar are loaded as ES modules above -->
+<!-- Three.js loaded via esm.sh in the module scripts above -->
+
+<!-- ── Embedded PTY terminal panel ── -->
+<script src="/terminal-panel.js"></script>
+<script src="/gesture-trainer.js"></script>
+<script src="/learning-dashboard.js"></script>
+
+<!-- Gesture Trainer Modal -->
+<div id="gesture-trainer-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content large-modal">
+        <div class="modal-header">
+            <h2>✋ Gesture Training Studio</h2>
+            <button class="modal-close" onclick="document.getElementById('gesture-trainer-modal').style.display='none'">×</button>
+        </div>
+        <div id="gesture-trainer-content" class="modal-body"></div>
+    </div>
+</div>
+
+<!-- Learning Dashboard Modal -->
+<div id="learning-dashboard-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content large-modal">
+        <div class="modal-header">
+            <h2>🧠 AI Learning Dashboard</h2>
+            <button class="modal-close" onclick="document.getElementById('learning-dashboard-modal').style.display='none'">×</button>
+        </div>
+        <div id="learning-dashboard-content" class="modal-body"></div>
+    </div>
+</div>
+
+<script>
+// Setup gesture trainer
+document.getElementById('gesture-trainer-btn').addEventListener('click', () => {
+    const modal = document.getElementById('gesture-trainer-modal');
+    const content = document.getElementById('gesture-trainer-content');
+    gestureTrainer.renderUI(content);
+    modal.style.display = 'flex';
+});
+
+// Setup learning dashboard (trigger from AI assistant badge)
+document.getElementById('ai-assistant-btn').addEventListener('click', () => {
+    const modal = document.getElementById('learning-dashboard-modal');
+    const content = document.getElementById('learning-dashboard-content');
+    if (window.learningDashboard) {
+        learningDashboard.renderUI(content);
+        modal.style.display = 'flex';
+    }
+});
+</script>
+
+<style>
+.gesture-trainer-btn {
+    position: fixed;
+    top: 140px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid rgba(255, 170, 0, 0.5);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    z-index: 1000;
+    transition: all 0.3s;
+    box-shadow: 0 0 20px rgba(255, 170, 0, 0.3);
+}
+
+.gesture-trainer-btn:hover {
+    transform: scale(1.1);
+    border-color: #fa0;
+    box-shadow: 0 0 30px rgba(255, 170, 0, 0.6);
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+}
+
+.modal-content {
+    background: rgba(0, 20, 40, 0.95);
+    border: 2px solid rgba(0, 255, 255, 0.5);
+    border-radius: 12px;
+    max-width: 900px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 10px 50px rgba(0, 255, 255, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content.large-modal {
+    width: 90%;
+    max-width: 1200px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: #0ff;
+    font-size: 24px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: #0ff;
+    font-size: 32px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    transition: all 0.2s;
+}
+
+.modal-close:hover {
+    color: #f00;
+    transform: rotate(90deg);
+}
+
+.modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0;
+}
+</style>
+
+</body>
+</html>

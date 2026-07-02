@@ -434,8 +434,12 @@ def create_multi_node_config(nodes: List[Tuple[str, int]]) -> List[Dict]:
     for rank, (hostname, gpu_count) in enumerate(nodes):
         try:
             ip_address = socket.gethostbyname(hostname)
-        except:
-            ip_address = hostname  # Assume it's already an IP
+        except socket.gaierror:
+            # Hostname resolution failed, assume it's already an IP address
+            ip_address = hostname
+        except Exception as e:
+            logger.warning(f"Error resolving hostname '{hostname}': {e}, using as-is")
+            ip_address = hostname
         
         configs.append({
             'node_id': f'node-{rank}',

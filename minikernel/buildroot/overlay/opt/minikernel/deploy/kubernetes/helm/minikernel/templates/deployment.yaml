@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minikernel.fullname" . }}
+  labels:
+    {{- include "minikernel.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "minikernel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "minikernel.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "minikernel.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        
+        command:
+          - python3
+          - /opt/minikernel/minikernel/boot.py
+        
+        args:
+          - --mode
+          - {{ .Values.minikernel.mode }}
+          - --log-level
+          - {{ .Values.minikernel.logLevel }}
+          - --confirmation
+          - {{ .Values.minikernel.confirmationMode }}
+        
+        env:
+          - name: PYTHONUNBUFFERED
+            value: "1"
+          - name: MINIKERNEL_MODE
+            value: {{ .Values.minikernel.mode }}
+          - name: MINIKERNEL_LOG_LEVEL
+            value: {{ .Values.minikernel.logLevel }}
+          {{- if .Values.minikernel.llm.enabled }}
+          - name: MINIKERNEL_LLM_MODEL
+            value: {{ .Values.minikernel.llm.model }}
+          - name: MINIKERNEL_LLM_CONTEXT_SIZE
+            value: {{ .Values.minikernel.llm.contextSize | quote }}
+          - name: MINIKERNEL_LLM_THREADS
+            value: {{ .Values.minikernel.llm.threads | quote }}
+          {{- end }}
+          {{- with .Values.env }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        
+        ports:
+          - name: http
+            containerPort: {{ .Values.service.targetPort }}
+            protocol: TCP
+        
+        {{- if .Values.livenessProbe.enabled }}
+        livenessProbe:
+          exec:
+            command:
+              - python3
+              - -c
+              - "import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('healthy')"
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.livenessProbe.successThreshold }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+        {{- end }}
+        
+        {{- if .Values.readinessProbe.enabled }}
+        readinessProbe:
+          exec:
+            command:
+              - python3
+              - -c
+              - "import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('ready')"
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.readinessProbe.successThreshold }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+        {{- end }}
+        
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        
+        volumeMounts:
+          {{- if .Values.persistence.enabled }}
+          - name: data
+            mountPath: {{ .Values.persistence.data.mountPath }}
+          - name: logs
+            mountPath: {{ .Values.persistence.logs.mountPath }}
+          {{- if .Values.minikernel.llm.enabled }}
+          - name: models
+            mountPath: {{ .Values.persistence.models.mountPath }}
+          {{- end }}
+          {{- end }}
+          {{- if .Values.configMap.create }}
+          - name: config
+            mountPath: /opt/minikernel/config
+            readOnly: true
+          {{- end }}
+      
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "minikernel.fullname" . }}-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "minikernel.fullname" . }}-logs
+        {{- if .Values.minikernel.llm.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "minikernel.fullname" . }}-models
+        {{- end }}
+        {{- end }}
+        {{- if .Values.configMap.create }}
+        - name: config
+          configMap:
+            name: {{ include "minikernel.fullname" . }}
+        {{- end }}
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

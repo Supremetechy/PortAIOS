@@ -71,7 +71,7 @@ def serve_static_assets(filename):
         return bottle.static_file(
             filename,
             root=str(_AIOS_ROOT / "assets"),
-            mimetype="application/javascript",
+            mimetype="application/javascript",  # type: ignore[arg-type]
         )
     return bottle.static_file(filename, root=str(_AIOS_ROOT / "assets"))
 
@@ -84,13 +84,13 @@ def serve_models(filename):
         return bottle.static_file(
             filename,
             root=str(_AIOS_ROOT / "models"),
-            mimetype="model/gltf-binary",
+            mimetype="model/gltf-binary",  # type: ignore[arg-type]
         )
     if lower.endswith(".gltf"):
         return bottle.static_file(
             filename,
             root=str(_AIOS_ROOT / "models"),
-            mimetype="model/gltf+json",
+            mimetype="model/gltf+json",  # type: ignore[arg-type]
         )
     return bottle.static_file(filename, root=str(_AIOS_ROOT / "models"))
 
@@ -465,6 +465,168 @@ def get_onboarding_step(step_index):
 
 
 # ---------------------------------------------------------------------------
+# MiniKernel integration — eel bridge to the AI-first microkernel
+# ---------------------------------------------------------------------------
+
+_minikernel_system = None
+_minikernel_boot_thread: Optional[threading.Thread] = None
+_minikernel_lock = threading.Lock()
+
+
+def _run_minikernel_boot():
+    """Background thread: import, instantiate, and boot MiniKernelSystem."""
+    global _minikernel_system
+    try:
+        root = Path(__file__).resolve().parent.parent
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+
+        from minikernel.boot import MiniKernelSystem
+        from minikernel.security.confirmation_loop import ConfirmationMode
+
+        system = MiniKernelSystem(config={"confirmation_mode": ConfirmationMode.AUTO_APPROVE})
+        if system.boot():
+            with _minikernel_lock:
+                _minikernel_system = system
+            logger.info("MiniKernel booted and ready")
+        else:
+            logger.error("MiniKernel boot failed")
+    except Exception as e:
+        logger.error("MiniKernel boot error: %s", e, exc_info=True)
+
+
+@eel.expose
+def minikernel_boot():
+    """Boot the minikernel in a background thread. Safe to call multiple times."""
+    global _minikernel_boot_thread
+
+    with _minikernel_lock:
+        if _minikernel_system is not None:
+            return {"success": True, "status": "running"}
+
+    if _minikernel_boot_thread and _minikernel_boot_thread.is_alive():
+        return {"success": True, "status": "booting"}
+
+    _minikernel_boot_thread = threading.Thread(
+        target=_run_minikernel_boot, daemon=True, name="MiniKernelBoot"
+    )
+    _minikernel_boot_thread.start()
+    return {"success": True, "status": "booting"}
+
+
+@eel.expose
+def minikernel_status():
+    """Return the current minikernel state and service summary."""
+    is_booting = _minikernel_boot_thread is not None and _minikernel_boot_thread.is_alive()
+
+    with _minikernel_lock:
+        system = _minikernel_system
+
+    if system is None:
+        return {
+            "state": "booting" if is_booting else "offline",
+            "services": 0,
+            "memory_mb": 0,
+            "capabilities": [],
+        }
+
+    try:
+        stats = system.kernel.get_stats()
+        caps  = system.capabilities.get_agent_capabilities("minikernel_ai")
+        return {
+            "state":        stats.get("state", "unknown"),
+            "services":     stats.get("services", 0),
+            "memory_mb":    round(stats.get("memory_mb", 0), 1),
+            "capabilities": [c.capability.value for c in caps],
+        }
+    except Exception as e:
+        return {"state": "error", "error": str(e), "capabilities": []}
+
+
+@eel.expose
+def minikernel_command(text: str):
+    """
+    Send a natural-language command through the minikernel intent pipeline.
+
+    Returns a dict with: success, output, error, intent { type, action, confidence }, risk
+    """
+    with _minikernel_lock:
+        system = _minikernel_system
+
+    if system is None:
+        return {"success": False, "error": "MiniKernel is not running. Boot it first."}
+
+    text = (text or "").strip()
+    if not text:
+        return {"success": False, "error": "Empty command."}
+
+    try:
+        intent      = system.intent_parser.parse(text)
+        intent_info = {
+            "type":       intent.intent_type.value,
+            "action":     intent.action,
+            "confidence": round(intent.confidence, 2),
+        }
+
+        if intent.confidence < 0.3:
+            return {
+                "success": False,
+                "error":   f"Command not understood (confidence {intent.confidence:.0%})",
+                "intent":  intent_info,
+            }
+
+        validation = system.validator.validate(intent)
+        if not validation.is_valid:
+            return {
+                "success": False,
+                "error":   "Blocked: " + "; ".join(validation.errors),
+                "intent":  intent_info,
+                "risk":    validation.risk_level.value,
+            }
+
+        # Submitting via the UI counts as explicit user confirmation.
+        result = system.executor.execute(intent, validation, confirmed=True)
+
+        output_msg = (result.output or {}).get("message", "Done")
+        files = (result.output or {}).get("files", [])
+        if files:
+            output_msg += f"\n{len(files)} result(s):"
+            for f in files[:8]:
+                output_msg += "\n  " + f.get("path", f.get("name", "?"))
+            if len(files) > 8:
+                output_msg += f"\n  … {len(files) - 8} more"
+
+        return {
+            "success": result.success,
+            "output":  output_msg,
+            "error":   result.error,
+            "intent":  intent_info,
+            "risk":    validation.risk_level.value,
+        }
+
+    except Exception as e:
+        logger.error("minikernel_command error: %s", e, exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@eel.expose
+def minikernel_shutdown_kernel():
+    """Gracefully shut down the running minikernel instance."""
+    global _minikernel_system
+    with _minikernel_lock:
+        system          = _minikernel_system
+        _minikernel_system = None
+
+    if system:
+        try:
+            system.shutdown()
+        except Exception:
+            pass
+
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
 # Avatar bridge lifecycle
 # ---------------------------------------------------------------------------
 
@@ -484,13 +646,12 @@ def start_avatar_bridge() -> Optional[subprocess.Popen]:
     fallback_script = _AIOS_ROOT / "server.py"
 
     if bridge_script.exists():
-        tts_engine = "fallback"
-        try:
-            from TTS.api import TTS  # noqa: F401
-            tts_engine = "coqui"
+        import importlib.util
+        tts_engine = "coqui" if importlib.util.find_spec("TTS") else "fallback"
+        if tts_engine == "coqui":
             logger.info("Coqui TTS available — using high-fidelity voice")
-        except Exception as e:
-            logger.info(f"Coqui TTS not available ({e}) — avatar will use browser TTS")
+        else:
+            logger.info("Coqui TTS not available — avatar will use browser TTS")
 
         logger.info("Starting avatar WebSocket bridge (full)...")
         proc = subprocess.Popen(
@@ -550,13 +711,9 @@ def start_eel_app():
     os.environ["PORTAIOS_GUI_RUNNING"] = "1"
 
     bridge = start_avatar_bridge()
-    pending_cleanup_timer = None
-    
+
     # Setup voice command handlers
     try:
-        import sys
-        from pathlib import Path
-        # Add parent directory to path if needed
         root = Path(__file__).parent.parent
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
@@ -571,9 +728,6 @@ def start_eel_app():
     
     # Setup viseme integration for lip-sync
     try:
-        import sys
-        from pathlib import Path
-        # Add parent directory to path if needed
         root = Path(__file__).parent.parent
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
@@ -585,11 +739,30 @@ def start_eel_app():
         logger.warning(f"Viseme integration not available: {e}")
         import traceback
         traceback.print_exc()
+    
+    # Setup AI Guardian 3D bridge
+    try:
+        from kernel.ai_guardian_bridge import setup_guardian_eel_api
+        setup_guardian_eel_api()
+        logger.info("✓ AI Guardian 3D bridge enabled")
+    except Exception as e:
+        logger.warning(f"AI Guardian bridge not available: {e}")
+        import traceback
+        traceback.print_exc()
 
     # Setup filesystem / dynamic UI data providers used by avatar-integration.html
     try:
         from kernel.ui_data_provider import setup_ui_data_provider
         ui_provider = setup_ui_data_provider()
+        
+        # Setup OS Integration Manager
+        try:
+            from kernel.os_integration_manager import setup_os_integration
+            os_integration = setup_os_integration()
+            if os_integration:
+                logger.info("✓ OS Integration Manager initialized")
+        except Exception as e:
+            logger.warning(f"OS Integration Manager not available: {e}")
         logger.info("UI data provider enabled")
     except Exception as e:
         ui_provider = None
@@ -605,9 +778,61 @@ def start_eel_app():
     try:
         from kernel.ui_voice_commands import setup_ui_voice_commands
         setup_ui_voice_commands()
-        logger.info("UI voice commands enabled")
+
+        # Setup desktop integration
+        from kernel.desktop_integration import setup_desktop_integration
+        setup_desktop_integration()
+
+        # Setup advanced desktop features
+        from kernel.advanced_desktop_features import setup_advanced_desktop_features
+        setup_advanced_desktop_features()
+        logger.info("UI voice commands and desktop integration enabled")
     except Exception as e:
         logger.warning(f"UI voice commands not available: {e}")
+
+    # Setup Browserbase cloud browser automation
+    try:
+        from kernel.browserbase_automation import setup_browserbase
+        setup_browserbase()
+        logger.info("Browserbase cloud browser automation enabled")
+    except Exception as e:
+        logger.warning(f"Browserbase automation not available: {e}")
+    
+    # Setup voice keyboard commands (keyboard control, annotation, dictation)
+    try:
+        from kernel.voice_keyboard_commands import setup_voice_keyboard_for_eel
+        setup_voice_keyboard_for_eel(eel)
+        
+        # Setup multimodal system (gesture, AI learning, fusion)
+        logger.info("Initializing multimodal AI system...")
+        from kernel.multimodal_integration import setup_multimodal_eel_integration, initialize_multimodal_system
+        
+        # Setup Eel APIs
+        multimodal_apis = setup_multimodal_eel_integration(eel)
+        
+        # Initialize system
+        init_result = initialize_multimodal_system()
+        if init_result['success']:
+            logger.info("✅ Multimodal AI system initialized successfully")
+        else:
+            logger.warning(f"⚠️  Multimodal system initialized with warnings: {init_result.get('errors')}")
+    except ImportError as e:
+        logger.info(f"Multimodal system not available (optional): {e}")
+    except Exception as e:
+        logger.warning(f"Failed to initialize multimodal system: {e}")
+        logger.info("Voice keyboard commands enabled (keyboard, annotation, dictation)")
+    except Exception as e:
+        logger.warning(f"Voice keyboard commands not available: {e}")
+    
+    # Setup DeepGram voice integration
+    try:
+        from kernel.deepgram_voice_integration import setup_deepgram_for_eel
+        setup_deepgram_for_eel(eel)
+        logger.info("✅ DeepGram voice integration registered")
+    except ImportError:
+        logger.info("DeepGram voice integration not available (optional)")
+    except Exception as e:
+        logger.warning(f"Failed to setup DeepGram integration: {e}")
     
     # Setup avatar creation server
     try:
@@ -622,23 +847,10 @@ def start_eel_app():
         os._exit(0)
 
     def close_callback(page, sockets):
-        nonlocal pending_cleanup_timer
-
-        if sockets:
-            if pending_cleanup_timer is not None:
-                pending_cleanup_timer.cancel()
-                pending_cleanup_timer = None
-            return
-
-        def _delayed_cleanup():
-            logger.info("No active Eel sockets after grace period; shutting down UI backend")
-            cleanup()
-
-        if pending_cleanup_timer is not None:
-            pending_cleanup_timer.cancel()
-        pending_cleanup_timer = threading.Timer(2.5, _delayed_cleanup)
-        pending_cleanup_timer.daemon = True
-        pending_cleanup_timer.start()
+        # Keep the backend alive when the browser closes so terminal sessions,
+        # avatar bridge, and any long-running agent tasks continue uninterrupted.
+        # The process only exits via SIGINT/SIGTERM or the in-UI quit_app() call.
+        logger.info(f"Browser disconnected (page={page}); backend staying alive — {len(sockets)} socket(s) remaining")
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
@@ -679,6 +891,55 @@ def start_eel_app():
 
     except Exception as e:
         logger.warning(f"Agent executor not available: {e}")
+
+    # ── Embedded PTY terminal — exposed to the web UI ─────────────────────
+    try:
+        from kernel.terminal_manager import setup_terminal_manager
+
+        # eel.terminal_output is the JS function registered by terminal-panel.js.
+        # We defer the callback wiring until after eel.start() is called below,
+        # so we pass the eel module and let setup_terminal_manager wire it then.
+        _terminal_mgr = setup_terminal_manager(eel)
+        logger.info("Terminal manager initialized")
+
+        @eel.expose
+        def terminal_create(name: str = "shell") -> str:
+            """Create a new PTY session and return its session_id."""
+            return _terminal_mgr.create_session(name)
+
+        @eel.expose
+        def terminal_input(session_id: str, data: str) -> bool:
+            """Write raw keystroke data to a session's PTY."""
+            return _terminal_mgr.send_input(session_id, data)
+
+        @eel.expose
+        def terminal_send_command(session_id: str, command: str) -> bool:
+            """Send a shell command (with newline) to a session."""
+            return _terminal_mgr.send_command(session_id, command)
+
+        @eel.expose
+        def terminal_resize(session_id: str, cols: int, rows: int) -> bool:
+            """Resize a terminal session (propagates SIGWINCH to the shell)."""
+            return _terminal_mgr.resize(session_id, int(cols), int(rows))
+
+        @eel.expose
+        def terminal_kill(session_id: str) -> bool:
+            """Kill a terminal session."""
+            return _terminal_mgr.kill_session(session_id)
+
+        @eel.expose
+        def terminal_list() -> list:
+            """Return metadata for all active terminal sessions."""
+            return _terminal_mgr.list_sessions()
+
+        @eel.expose
+        def terminal_scrollback(session_id: str) -> str:
+            """Return base64-encoded scrollback buffer for session replay."""
+            return _terminal_mgr.get_scrollback_b64(session_id)
+
+    except Exception as e:
+        logger.warning(f"Terminal manager not available: {e}")
+        import traceback; traceback.print_exc()
 
     # ── Avatar customizer — exposed to the web UI ──────────────────────
     @eel.expose
@@ -722,9 +983,32 @@ def start_eel_app():
             return {'status': 'fallback', 'error': str(e)}
     
     try:
-        logger.info("Starting AIOS onboarding UI on http://localhost:8001 ...")
-
         startup_page = _startup_page()
+
+        # ── Headless / Docker mode ──────────────────────────────────────────
+        # When AIOS_HEADLESS=1, Eel binds on all interfaces (0.0.0.0) so the
+        # host browser can reach it, and we never attempt to spawn a browser
+        # inside the container.
+        _headless = os.environ.get("AIOS_HEADLESS") == "1"
+        _host = "0.0.0.0" if _headless else "localhost"
+
+        if _headless:
+            logger.info(
+                "Headless mode — Eel serving on http://0.0.0.0:8001 "
+                "(open http://localhost:8001 in your host browser)"
+            )
+            eel.start(
+                startup_page,
+                host="0.0.0.0",
+                port=8001,
+                size=(1280, 800),
+                mode=None,
+                block=True,
+                close_callback=close_callback,
+            )
+            return  # headless path handled above
+
+        logger.info("Starting AIOS onboarding UI on http://localhost:8001 ...")
         url = f"http://localhost:8001/{startup_page}"
 
         if sys.platform == "darwin":
@@ -743,7 +1027,7 @@ def start_eel_app():
             def _launch_detached() -> bool:
                 # Wait briefly for the Eel server to bind to :8001 before
                 # handing the URL to Chrome.
-                _time.sleep(1.2)
+                _time.sleep(1.5)
                 candidates = [
                     "Google Chrome",
                     "Microsoft Edge",
@@ -755,14 +1039,7 @@ def start_eel_app():
                         continue
                     try:
                         _sp.Popen(
-                            [
-                                "/usr/bin/open",
-                                "-a",
-                                app_name,
-                                "--args",
-                                f"--app={url}",
-                                "--window-size=1280,800",
-                            ],
+                            ["/usr/bin/open", "-a", app_name, url],
                             stdout=_sp.DEVNULL,
                             stderr=_sp.DEVNULL,
                         )
@@ -773,9 +1050,22 @@ def start_eel_app():
                         return True
                     except Exception as e:
                         logger.warning(f"Failed to launch {app_name}: {e}")
+
+                # Fallback: open in default system browser
+                try:
+                    _sp.Popen(
+                        ["/usr/bin/open", url],
+                        stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL,
+                    )
+                    logger.info("Launched default browser as fallback")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Failed to open default browser: {e}")
+
                 logger.warning(
-                    "No Chromium browser found in /Applications. "
-                    f"Open manually: {url}"
+                    "No browser could be opened. "
+                    f"Navigate manually: {url}"
                 )
                 return False
 

@@ -1,0 +1,46 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: minikernel
+  labels:
+    cloud.googleapis.com/location: us-central1
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '1'
+        autoscaling.knative.dev/maxScale: '10'
+        run.googleapis.com/cpu-throttling: 'false'
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 1
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/PROJECT_ID/minikernel:latest
+        ports:
+        - name: http1
+          containerPort: 8080
+        env:
+        - name: MINIKERNEL_MODE
+          value: text
+        - name: MINIKERNEL_LOG_LEVEL
+          value: INFO
+        - name: MINIKERNEL_CONFIRMATION
+          value: text
+        resources:
+          limits:
+            cpu: '2'
+            memory: 4Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: data
+          mountPath: /opt/minikernel/data
+      volumes:
+      - name: data
+        emptyDir: {}
+      serviceAccountName: minikernel-sa@PROJECT_ID.iam.gserviceaccount.com

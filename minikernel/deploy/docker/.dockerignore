@@ -1,0 +1,51 @@
+# MiniKernel Docker ignore file
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Models (download separately)
+models/*.gguf
+models/*.bin
+
+# Data
+data/
+*.db
+
+# Documentation (not needed in container)
+*.md
+docs/
+
+# Git
+.git/
+.gitignore
+
+# Deployment files (avoid recursion)
+deploy/

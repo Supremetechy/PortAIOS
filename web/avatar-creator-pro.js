@@ -6,7 +6,7 @@
 import { AvatarPreview3D } from './avatar-preview-3d.js';
 import { AnimationPlayer, EXPRESSION_ANIMATIONS, LIPSYNC_ANIMATIONS } from './avatar-animations.js';
 
-class AvatarCreatorPro {
+export class AvatarCreatorPro {
     constructor() {
         this.currentParams = {
             head_radius: 0.12,
@@ -25,40 +25,53 @@ class AvatarCreatorPro {
         this.statusPollInterval = null;
         this.currentAvatarId = null;
         
-        this.init();
+        // Initialize asynchronously with error handling
+        this.init().catch(error => {
+            console.error('[AvatarCreatorPro] Initialization failed:', error);
+            // Still setup event listeners even if init fails
+            this.setupEventListeners();
+        });
     }
     
     async init() {
         console.log('[AvatarCreatorPro] Initializing...');
         
-        // Initialize 3D preview
-        const previewContainer = document.getElementById('preview-3d');
-        if (previewContainer) {
-            this.preview3D = new AvatarPreview3D(previewContainer);
-            this.animationPlayer = new AnimationPlayer(this.preview3D);
+        try {
+            // Setup event listeners FIRST before any async operations
+            // This ensures buttons work even if initialization fails
+            this.setupEventListeners();
+            console.log('[AvatarCreatorPro] Event listeners attached');
             
-            // Load default avatar
-            try {
-                await this.preview3D.loadAvatar('/models/avatar_generated.glb');
-                console.log('[AvatarCreatorPro] Default avatar loaded');
-            } catch (error) {
-                console.warn('[AvatarCreatorPro] Could not load default avatar:', error);
+            // Initialize 3D preview
+            const previewContainer = document.getElementById('preview-3d');
+            if (previewContainer) {
+                try {
+                    this.preview3D = new AvatarPreview3D(previewContainer);
+                    this.animationPlayer = new AnimationPlayer(this.preview3D);
+                    
+                    // Load default avatar
+                    await this.preview3D.loadAvatar('/models/avatar_generated.glb');
+                    console.log('[AvatarCreatorPro] Default avatar loaded');
+                } catch (error) {
+                    console.warn('[AvatarCreatorPro] Could not load default avatar:', error);
+                    // Continue initialization even if 3D preview fails
+                }
             }
+            
+            // Load presets
+            await this.loadPresets();
+            
+            // Load saved avatars
+            await this.loadSavedAvatars();
+            
+            // Setup tabs
+            this.setupTabs();
+            
+            console.log('[AvatarCreatorPro] Ready');
+        } catch (error) {
+            console.error('[AvatarCreatorPro] Initialization error:', error);
+            // Event listeners already set up, so buttons will still work
         }
-        
-        // Load presets
-        await this.loadPresets();
-        
-        // Setup event listeners
-        this.setupEventListeners();
-        
-        // Load saved avatars
-        await this.loadSavedAvatars();
-        
-        // Setup tabs
-        this.setupTabs();
-        
-        console.log('[AvatarCreatorPro] Ready');
     }
     
     setupTabs() {
@@ -300,37 +313,62 @@ class AvatarCreatorPro {
         document.getElementById('generate-btn').disabled = true;
         
         this.generationInProgress = true;
+        this.generationTimeout = null;
         
         try {
             if (typeof eel !== 'undefined' && eel.start_avatar_generation) {
+                console.log('[AvatarCreatorPro] Starting backend generation...');
+                
                 const result = await eel.start_avatar_generation(this.currentParams)();
+                
+                console.log('[AvatarCreatorPro] Start result:', result);
                 
                 if (result.success) {
                     this.startStatusPolling();
+                    
+                    // Add safety timeout (2 minutes)
+                    this.generationTimeout = setTimeout(() => {
+                        console.warn('[AvatarCreatorPro] Generation timeout');
+                        this.stopStatusPolling();
+                        this.showError('Generation timed out after 2 minutes');
+                    }, 120000);
                 } else {
                     throw new Error(result.error || 'Failed to start generation');
                 }
             } else {
-                console.warn('[AvatarCreatorPro] Demo mode');
+                console.warn('[AvatarCreatorPro] Demo mode - Eel not available');
                 this.simulateGeneration();
             }
         } catch (error) {
             console.error('[AvatarCreatorPro] Generation failed:', error);
-            this.showError(error.message);
+            this.showError(error.message || 'Generation failed');
             this.generationInProgress = false;
             document.getElementById('generate-btn').disabled = false;
         }
     }
     
     startStatusPolling() {
+        console.log('[AvatarCreatorPro] Starting status polling...');
+        let consecutiveErrors = 0;
+        const maxErrors = 5;
+        
         this.statusPollInterval = setInterval(async () => {
             try {
                 if (typeof eel !== 'undefined' && eel.get_avatar_generation_status) {
                     const status = await eel.get_avatar_generation_status()();
+                    
+                    console.log('[AvatarCreatorPro] Status:', status);
+                    consecutiveErrors = 0; // Reset error counter on success
+                    
                     this.updateProgress(status);
                     
                     if (!status.in_progress) {
                         this.stopStatusPolling();
+                        
+                        if (this.generationTimeout) {
+                            clearTimeout(this.generationTimeout);
+                            this.generationTimeout = null;
+                        }
                         
                         if (status.error) {
                             this.showError(status.error);
@@ -340,14 +378,22 @@ class AvatarCreatorPro {
                             if (this.preview3D) {
                                 await this.preview3D.loadAvatar(status.result_path);
                             }
+                        } else {
+                            this.showError('Generation completed but no result path');
                         }
                     }
                 }
             } catch (error) {
-                console.error('[AvatarCreatorPro] Status polling error:', error);
-                this.stopStatusPolling();
+                consecutiveErrors++;
+                console.error(`[AvatarCreatorPro] Status polling error (${consecutiveErrors}/${maxErrors}):`, error);
+                
+                if (consecutiveErrors >= maxErrors) {
+                    console.error('[AvatarCreatorPro] Too many polling errors, stopping');
+                    this.stopStatusPolling();
+                    this.showError('Lost connection to backend during generation');
+                }
             }
-        }, 500);
+        }, 1000); // Poll every 1 second instead of 500ms
     }
     
     stopStatusPolling() {

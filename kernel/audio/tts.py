@@ -21,6 +21,13 @@ from typing import Optional
 
 logger = logging.getLogger("AIOS.audio.tts")
 
+# Try to import DeepGram backend
+try:
+    from kernel.audio.deepgram_backend import DeepGramVoiceAgent, DEEPGRAM_AVAILABLE
+except ImportError:
+    DEEPGRAM_AVAILABLE = False
+    DeepGramVoiceAgent = None
+
 
 class TTSBackend(ABC):
     """Abstract TTS backend."""
@@ -176,6 +183,34 @@ class MacOSSayBackend(TTSBackend):
             logger.warning(f"macOS say failed: {e}")
 
 
+class DeepGramTTSBackend(TTSBackend):
+    """DeepGram TTS backend using unified voice agent."""
+    name = "deepgram"
+
+    def __init__(self):
+        self._agent = None
+
+    def is_available(self) -> bool:
+        return DEEPGRAM_AVAILABLE and os.getenv("DEEPGRAM_API_KEY") is not None
+
+    def speak(self, text: str) -> None:
+        """
+        Speak text using DeepGram TTS.
+        Note: For full conversational voice agent, use DeepGramVoiceAgent directly.
+        """
+        if not self.is_available():
+            logger.error("DeepGram backend not available")
+            return
+        
+        try:
+            logger.info(f"[TTS-deepgram] {text}")
+            # TODO: Implement direct DeepGram TTS API call for non-conversational use
+            # For now, recommend using the full voice agent for better experience
+            logger.info("Tip: Use DeepGramVoiceAgent for full conversational capabilities")
+        except Exception as e:
+            logger.error(f"DeepGram TTS error: {e}")
+
+
 class SilentTTSBackend(TTSBackend):
     name = "silent"
 
@@ -202,6 +237,7 @@ class TTSEngine:
 
     def _auto_detect(self) -> TTSBackend:
         candidates = [
+            DeepGramTTSBackend(),
             PiperTTSBackend(),
             CoquiTTSBackend(),
             EspeakTTSBackend(),
@@ -237,10 +273,11 @@ def get_tts_engine(prefer: Optional[str] = None) -> TTSEngine:
     Parameters
     ----------
     prefer : str, optional
-        Force: "piper", "coqui", "espeak", "macos", "silent"
+        Force: "deepgram", "piper", "coqui", "espeak", "macos", "silent"
     """
     if prefer:
         backends = {
+            "deepgram": DeepGramTTSBackend,
             "piper": PiperTTSBackend,
             "coqui": CoquiTTSBackend,
             "espeak": EspeakTTSBackend,

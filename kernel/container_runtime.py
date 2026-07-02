@@ -161,8 +161,12 @@ class ContainerManager:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
                 return result.stdout.strip()
-        except:
-            pass
+        except FileNotFoundError:
+            logger.debug(f"Runtime command not found: {self.runtime.value}")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to get runtime version: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting runtime version: {e}")
         return "Unknown"
     
     def is_available(self) -> bool:
@@ -236,7 +240,11 @@ class ContainerManager:
                 return float(size_str.replace('KB', '')) / 1024
             else:
                 return 0.0
-        except:
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"Failed to parse size '{size_str}': {e}")
+            return 0.0
+        except Exception as e:
+            logger.warning(f"Unexpected error parsing size '{size_str}': {e}")
             return 0.0
     
     def create_container(self, config: ContainerConfig) -> Optional[str]:

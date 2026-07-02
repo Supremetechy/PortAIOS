@@ -297,7 +297,11 @@ class GPUScheduler:
     
     def get_all_gpu_status(self) -> List[GPUStatus]:
         """Get status of all GPUs"""
-        return [self.get_gpu_status(gpu_id) for gpu_id in sorted(self.gpus.keys())]
+        return [
+            s
+            for gpu_id in sorted(self.gpus.keys())
+            if (s := self.get_gpu_status(gpu_id)) is not None
+        ]
     
     def print_gpu_status(self):
         """Print GPU status summary"""
@@ -619,7 +623,7 @@ class ResourceManager:
                 allocations['gpu_memory_gb'] = gpu_memory_gb
             else:
                 # Rollback memory allocation
-                if 'memory_gb' in allocations:
+                if 'memory_gb' in allocations and self.memory_manager:
                     self.memory_manager.release(process_id)
                 return {}
         

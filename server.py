@@ -1,4 +1,5 @@
 import asyncio
+import os
 import websockets
 import json
 import random
@@ -59,17 +60,25 @@ async def handler(websocket):
             await websocket.send(json.dumps(data))
             await asyncio.sleep(0.1)
 
-    except:
+    except websockets.exceptions.ConnectionClosed:
+        # Client disconnected normally
         pass
+    except asyncio.CancelledError:
+        # Server shutdown
+        raise
+    except Exception as e:
+        # Log unexpected errors instead of silently ignoring them
+        print(f"⚠️  WebSocket error: {e}")
     finally:
         clients.remove(websocket)
 
 async def main():
-    # Bind to a concrete IP so browser clients using ws://localhost:<port> can connect.
-    # Also relax origin checks / headers handling for typical browser environments.
+    # In Docker (AIOS_HEADLESS=1) bind to 0.0.0.0 so port-mapped connections
+    # from the host reach the server; locally keep 127.0.0.1.
+    bind_host = "0.0.0.0" if os.environ.get("AIOS_HEADLESS") == "1" else "127.0.0.1"
     async with websockets.serve(
         handler,
-        "127.0.0.1",
+        bind_host,
         8765,
         ping_interval=20,
         ping_timeout=20,
@@ -79,7 +88,7 @@ async def main():
         origins=None,
         process_request=_normalize_connection_header,
     ):
-        print("✅ Avatar control server running on ws://127.0.0.1:8765")
+        print(f"✅ Avatar control server running on ws://{bind_host}:8765")
         await asyncio.Future()
 
 if __name__ == "__main__":

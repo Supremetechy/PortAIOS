@@ -1,0 +1,27 @@
+apiVersion: v2
+name: minikernel
+description: AI-First Voice-Controlled Operating System
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - ai
+  - operating-system
+  - voice-control
+  - microkernel
+  - llm
+
+home: https://github.com/yourusername/minikernel
+sources:
+  - https://github.com/yourusername/minikernel
+
+maintainers:
+  - name: MiniKernel Team
+    email: minikernel@example.com
+
+icon: https://raw.githubusercontent.com/yourusername/minikernel/main/assets/logo.png
+
+annotations:
+  category: Infrastructure
+  licenses: MIT

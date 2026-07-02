@@ -22,6 +22,7 @@ datas = [
 ]
 
 hiddenimports = [
+    # Web / async
     "eel",
     "bottle",
     "bottle_websocket",
@@ -31,20 +32,78 @@ hiddenimports = [
     "websockets.legacy",
     "websockets.legacy.server",
     "websockets.legacy.client",
+    "websockets.http11",
+    "websockets.datastructures",
+    # Numerics / data / media
     "numpy",
+    "scipy",
+    "pandas",
+    "sklearn",
+    "sklearn.utils",
+    "trimesh",
+    "trimesh.visual",
+    "trimesh.creation",
     "psutil",
     "GPUtil",
     "soundfile",
+    "PIL",
+    # Computer vision / gesture
+    "cv2",
+    "mediapipe",
+    # Browser automation
+    "browserbase",
+    "playwright",
+    "playwright.sync_api",
+    "playwright.async_api",
+    # Kernel — core
     "kernel",
-    "kernel.onboarding_gui",
-    "kernel.onboarding",
     "kernel.boot",
-    "kernel.system_monitor",
+    "kernel.onboarding",
+    "kernel.onboarding_gui",
+    "kernel.onboarding_gui_fallback",
     "kernel.hardware_detection",
+    "kernel.system_monitor",
+    "kernel.compatibility_checker",
+    "kernel.system_updater",
+    "kernel.security",
+    "kernel.security_cli",
+    # Kernel — voice / avatar
     "kernel.voice_commands",
-    "kernel.viseme_integration",
     "kernel.voice_assistant",
+    "kernel.viseme_integration",
     "kernel.piper_viseme_server",
+    "kernel.ui_voice_commands",
+    "kernel.voice_keyboard_commands",
+    "kernel.avatar_generator",
+    "kernel.avatar_creation_server",
+    "kernel.avatar_storage",
+    # Kernel — AI / compute
+    "kernel.agent_commands",
+    "kernel.agent_executor",
+    "kernel.ai_file_operations",
+    "kernel.ai_learning_engine",
+    "kernel.ai_learning_enhanced",
+    "kernel.model_manager",
+    "kernel.distributed_training",
+    "kernel.container_runtime",
+    "kernel.scheduler",
+    "kernel.resource_manager",
+    # Kernel — multimodal / gesture
+    "kernel.multimodal_controller",
+    "kernel.multimodal_integration",
+    "kernel.gesture_controller",
+    "kernel.gesture_commands",
+    # Kernel — browser automation
+    "kernel.browserbase_automation",
+    # Kernel — system / UI
+    "kernel.filesystem",
+    "kernel.network",
+    "kernel.desktop_integration",
+    "kernel.advanced_desktop_features",
+    "kernel.os_integration_manager",
+    "kernel.terminal_manager",
+    "kernel.ui_data_provider",
+    # Installer
     "installer.first_run",
 ]
 

@@ -4,6 +4,12 @@ Extends AIOS voice commands to support dynamic UI transformations.
 """
 
 import logging
+import platform
+import subprocess
+import os
+import sys
+import threading
+import time
 from typing import Dict, Any, Optional, List
 import re
 
@@ -17,6 +23,182 @@ except ImportError:
     EEL_AVAILABLE = False
 
 
+class ScheduledShutdownManager:
+    """Manages scheduled shutdown/restart with countdown and cancellation."""
+
+    def __init__(self):
+        self._timer: Optional[threading.Timer] = None
+        self._lock = threading.Lock()
+        self._scheduled_command: Optional[str] = None
+        self._fire_at: Optional[float] = None
+
+    def schedule(self, command: str, delay_seconds: int) -> Dict[str, Any]:
+        with self._lock:
+            if self._timer is not None:
+                return {"success": False, "message": "A shutdown is already scheduled. Cancel it first."}
+            self._scheduled_command = command
+            self._fire_at = time.time() + delay_seconds
+            self._timer = threading.Timer(delay_seconds, self._execute)
+            self._timer.daemon = True
+            self._timer.start()
+            logger.info("Scheduled %s in %ds", command, delay_seconds)
+            return {
+                "success": True,
+                "message": f"{command.title()} scheduled in {delay_seconds} seconds",
+                "speak": f"I'll {command} in {self._format_duration(delay_seconds)}",
+                "delay_seconds": delay_seconds,
+            }
+
+    def cancel(self) -> Dict[str, Any]:
+        with self._lock:
+            if self._timer is None:
+                return {"success": False, "message": "No scheduled shutdown to cancel"}
+            self._timer.cancel()
+            cmd = self._scheduled_command
+            self._timer = None
+            self._scheduled_command = None
+            self._fire_at = None
+            logger.info("Cancelled scheduled %s", cmd)
+            return {"success": True, "message": f"Scheduled {cmd} cancelled", "speak": "Scheduled action cancelled"}
+
+    def status(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            if self._timer is None:
+                return None
+            remaining = max(0, int(self._fire_at - time.time()))
+            return {"command": self._scheduled_command, "remaining_seconds": remaining}
+
+    def _execute(self):
+        with self._lock:
+            cmd = self._scheduled_command
+            self._timer = None
+            self._scheduled_command = None
+            self._fire_at = None
+        logger.info("Executing scheduled %s", cmd)
+        try:
+            if EEL_AVAILABLE:
+                eel.execute_system_command(cmd, {})
+            else:
+                _run_system_power_command(cmd)
+        except Exception as e:
+            logger.error("Scheduled %s failed: %s", cmd, e)
+
+    @staticmethod
+    def _format_duration(seconds: int) -> str:
+        if seconds < 60:
+            return f"{seconds} second{'s' if seconds != 1 else ''}"
+        minutes = seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
+def _run_system_power_command(command: str) -> Dict[str, Any]:
+    """Execute a platform-appropriate power management command."""
+    system = platform.system()
+    try:
+        if command == 'shutdown':
+            if system == 'Darwin':
+                subprocess.Popen(['osascript', '-e', 'tell app "System Events" to shut down'])
+            elif system == 'Windows':
+                subprocess.Popen(['shutdown', '/s', '/t', '0'])
+            else:
+                subprocess.Popen(['shutdown', '-h', 'now'])
+            return {'success': True, 'message': 'Shutting down', 'speak': 'Shutting down now'}
+
+        elif command == 'restart':
+            if system == 'Darwin':
+                subprocess.Popen(['osascript', '-e', 'tell app "System Events" to restart'])
+            elif system == 'Windows':
+                subprocess.Popen(['shutdown', '/r', '/t', '0'])
+            else:
+                subprocess.Popen(['shutdown', '-r', 'now'])
+            return {'success': True, 'message': 'Restarting', 'speak': 'Restarting now'}
+
+        elif command == 'sleep':
+            if system == 'Darwin':
+                subprocess.Popen(['pmset', 'sleepnow'])
+            elif system == 'Windows':
+                subprocess.Popen(['rundll32.exe', 'powrprof.dll,SetSuspendState', '0,1,0'])
+            else:
+                subprocess.Popen(['systemctl', 'suspend'])
+            return {'success': True, 'message': 'Sleeping', 'speak': 'Putting computer to sleep'}
+
+        elif command == 'hibernate':
+            if system == 'Darwin':
+                # pmset hibernatemode 25 = hibernate to disk
+                subprocess.Popen(['pmset', '-a', 'hibernatemode', '25'])
+                subprocess.Popen(['pmset', 'sleepnow'])
+            elif system == 'Windows':
+                subprocess.Popen(['rundll32.exe', 'powrprof.dll,SetSuspendState', '1,1,0'])
+            else:
+                subprocess.Popen(['systemctl', 'hibernate'])
+            return {'success': True, 'message': 'Hibernating', 'speak': 'Hibernating computer'}
+
+        elif command == 'lock_screen':
+            if system == 'Darwin':
+                subprocess.Popen([
+                    '/System/Library/CoreServices/Menu Extras/User.menu/'
+                    'Contents/Resources/CGSession', '-suspend'
+                ])
+            elif system == 'Windows':
+                subprocess.Popen(['rundll32.exe', 'user32.dll,LockWorkStation'])
+            else:
+                subprocess.Popen(['loginctl', 'lock-session'])
+            return {'success': True, 'message': 'Screen locked', 'speak': 'Locking screen'}
+
+        elif command == 'logout':
+            if system == 'Darwin':
+                subprocess.Popen(['osascript', '-e', 'tell app "System Events" to log out'])
+            elif system == 'Windows':
+                subprocess.Popen(['shutdown', '/l'])
+            else:
+                subprocess.Popen(['loginctl', 'terminate-user', os.getenv('USER', '')])
+            return {'success': True, 'message': 'Logging out', 'speak': 'Logging out'}
+
+        return {'success': False, 'message': f'Unknown power command: {command}'}
+    except Exception as e:
+        logger.error("Power command %s failed: %s", command, e)
+        return {'success': False, 'message': str(e), 'speak': f'Could not {command}'}
+
+
+_scheduled_shutdown = ScheduledShutdownManager()
+
+
+def _graceful_app_shutdown():
+    """Stop minikernel + eel and exit cleanly."""
+    try:
+        from kernel.onboarding_gui import minikernel_shutdown_kernel
+        minikernel_shutdown_kernel()
+    except Exception:
+        pass
+    try:
+        if EEL_AVAILABLE:
+            eel.quit_app()
+    except Exception:
+        pass
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+
+
+def _graceful_app_restart():
+    """Stop minikernel + eel then re-exec the process."""
+    try:
+        from kernel.onboarding_gui import minikernel_shutdown_kernel
+        minikernel_shutdown_kernel()
+    except Exception:
+        pass
+    try:
+        if EEL_AVAILABLE:
+            eel.quit_app()
+    except Exception:
+        pass
+
+    def _do_restart():
+        time.sleep(1.0)
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+
+
 class UIVoiceCommandHandler:
     """Handles voice commands for UI mode transformations"""
     
@@ -27,7 +209,29 @@ class UIVoiceCommandHandler:
     
     def _build_command_patterns(self) -> Dict[str, List[Dict[str, Any]]]:
         """Build regex patterns for voice command matching"""
+        # NOTE: Order matters! More specific patterns should come first.
+        # System control patterns are checked early to prevent conflicts.
         return {
+            'system_control': [
+                # Scheduled actions — must come before plain shutdown/restart
+                {'pattern': r'(shutdown|shut\s+down|turn\s+off|restart|reboot)\s+(?:in|after)\s+(\d+)\s+(second|minute|hour)s?', 'action': 'scheduled_shutdown'},
+                {'pattern': r'cancel\s+(?:scheduled\s+)?(?:shutdown|restart|reboot)', 'action': 'cancel_scheduled_shutdown'},
+                # Exit/shutdown patterns - must come first to avoid AI assistant conflicts
+                {'pattern': r'^(exit|quit|close)$', 'action': 'shutdown'},
+                {'pattern': r'^(exit|quit|close)\s+(port\s*aios|aios|system|application|app|program)$', 'action': 'shutdown'},
+                {'pattern': r'(shut\s+down|shutdown|turn\s+off)\s+(the\s+)?(computer|system|port\s*aios|aios|application|app|program)', 'action': 'shutdown'},
+                {'pattern': r'restart\s+(the\s+)?(computer|system|port\s*aios|aios)', 'action': 'restart'},
+                {'pattern': r'hibernate', 'action': 'hibernate'},
+                {'pattern': r'(put\s+computer\s+to\s+)?sleep', 'action': 'system_sleep'},
+                {'pattern': r'lock\s+(my\s+)?(screen|computer)', 'action': 'lock_screen'},
+                {'pattern': r'(log\s+out|logout|sign\s+out)', 'action': 'logout'},
+                {'pattern': r'empty\s+trash', 'action': 'empty_trash'},
+                {'pattern': r'show\s+battery', 'action': 'show_battery'},
+                {'pattern': r'battery\s+status', 'action': 'show_battery'},
+                {'pattern': r'(show\s+)?(disk\s+space|storage)', 'action': 'show_disk_space'},
+                {'pattern': r'(show\s+)?(memory|ram)\s+usage', 'action': 'show_memory'},
+                {'pattern': r'(show\s+)?(cpu|processor)\s+usage', 'action': 'show_cpu'},
+            ],
             'browser': [
                 {'pattern': r'open\s+(the\s+)?(web\s+)?browser', 'action': 'open_browser'},
                 {'pattern': r'launch\s+(the\s+)?browser', 'action': 'open_browser'},
@@ -146,19 +350,6 @@ class UIVoiceCommandHandler:
                 {'pattern': r'(flip\s+a\s+)?coin', 'action': 'flip_coin'},
                 {'pattern': r'roll\s+(a\s+)?dice', 'action': 'roll_dice'},
                 {'pattern': r'(give\s+me\s+)?(a\s+)?random\s+number', 'action': 'random_number'},
-            ],
-            'system_control': [
-                {'pattern': r'(put\s+computer\s+to\s+)?sleep', 'action': 'system_sleep'},
-                {'pattern': r'lock\s+(my\s+)?(screen|computer)', 'action': 'lock_screen'},
-                {'pattern': r'(log\s+out|logout|sign\s+out)', 'action': 'logout'},
-                {'pattern': r'(shut\s+down|shutdown|turn\s+off)\s+(computer|system)', 'action': 'shutdown'},
-                {'pattern': r'restart\s+(computer|system)', 'action': 'restart'},
-                {'pattern': r'empty\s+trash', 'action': 'empty_trash'},
-                {'pattern': r'show\s+battery', 'action': 'show_battery'},
-                {'pattern': r'battery\s+status', 'action': 'show_battery'},
-                {'pattern': r'(show\s+)?(disk\s+space|storage)', 'action': 'show_disk_space'},
-                {'pattern': r'(show\s+)?(memory|ram)\s+usage', 'action': 'show_memory'},
-                {'pattern': r'(show\s+)?(cpu|processor)\s+usage', 'action': 'show_cpu'},
             ],
             'developer_tools': [
                 {'pattern': r'git\s+status', 'action': 'git_status'},
@@ -293,6 +484,22 @@ class UIVoiceCommandHandler:
                 {'pattern': r'(show\s+)?scheduled\s+tasks', 'action': 'show_scheduled'},
                 {'pattern': r'cancel\s+(task|automation)\s+(.+)', 'action': 'cancel_automation', 'extract': 'task'},
             ],
+            'browserbase': [
+                # Open Browserbase cloud browser
+                {'pattern': r'open\s+browserbase', 'action': 'open_browserbase'},
+                {'pattern': r'(use|launch|start)\s+(browserbase|cloud\s+browser)', 'action': 'open_browserbase'},
+                {'pattern': r'cloud\s+browser', 'action': 'open_browserbase'},
+                # Automate a task via Browserbase
+                {'pattern': r'automate\s+(.+)', 'action': 'browserbase_automate', 'extract': 'task'},
+                {'pattern': r'(run|execute)\s+automation\s+(.+)', 'action': 'browserbase_automate', 'extract': 'task'},
+                # Navigate to a URL in Browserbase
+                {'pattern': r'browse\s+(.+)\s+with\s+(browserbase|cloud|automation)', 'action': 'browserbase_navigate', 'extract': 'url'},
+                {'pattern': r'(go\s+to|visit|open)\s+(.+)\s+in\s+(browserbase|cloud\s+browser)', 'action': 'browserbase_navigate', 'extract': 'url'},
+                # Configure
+                {'pattern': r'configure\s+browserbase', 'action': 'open_browserbase'},
+                # Close
+                {'pattern': r'close\s+(browserbase|cloud\s+browser)', 'action': 'close_browserbase'},
+            ],
             'database': [
                 {'pattern': r'(show\s+)?databases?', 'action': 'list_databases'},
                 {'pattern': r'connect\s+to\s+database\s+(.+)', 'action': 'connect_database', 'extract': 'db'},
@@ -335,6 +542,14 @@ class UIVoiceCommandHandler:
         }
     
     def process_command(self, text: str) -> Optional[Dict[str, Any]]:
+        # Update AI Guardian if available
+        try:
+            from kernel.ai_guardian_bridge import get_guardian_bridge
+            bridge = get_guardian_bridge()
+            bridge.set_activity('thinking')
+            bridge.set_emotion('thinking')
+        except Exception:
+            pass
         """
         Process voice command and return UI action
         Returns: {'action': str, 'mode': str, 'data': dict} or None
@@ -417,6 +632,37 @@ class UIVoiceCommandHandler:
                 'data': {'url': f'https://www.google.com/search?q={query.strip().replace(" ", "+")}'}
             }
         
+        elif action == 'open_browserbase':
+            return {
+                'action': 'switch_mode',
+                'mode': 'browserbase',
+                'data': {}
+            }
+
+        elif action == 'browserbase_automate':
+            task = match.group(2) if match.lastindex >= 2 else match.group(1)
+            return {
+                'action': 'switch_mode',
+                'mode': 'browserbase',
+                'data': {'task': task.strip()}
+            }
+
+        elif action == 'browserbase_navigate':
+            # group 2 is the URL portion for most patterns
+            url = match.group(2) if match.lastindex >= 2 else match.group(1)
+            return {
+                'action': 'switch_mode',
+                'mode': 'browserbase',
+                'data': {'url': url.strip()}
+            }
+
+        elif action == 'close_browserbase':
+            return {
+                'action': 'switch_mode',
+                'mode': 'avatar',
+                'data': {}
+            }
+
         elif action == 'back_to_avatar':
             return {
                 'action': 'switch_mode',
@@ -540,6 +786,73 @@ class UIVoiceCommandHandler:
                 'data': {}
             }
         
+        # Scheduled shutdown
+        elif action == 'scheduled_shutdown':
+            cmd_word = match.group(1).lower().replace(' ', '_')
+            command = 'restart' if 'restart' in cmd_word or 'reboot' in cmd_word else 'shutdown'
+            amount = int(match.group(2))
+            unit = match.group(3).lower()
+            multiplier = {'second': 1, 'minute': 60, 'hour': 3600}.get(unit, 60)
+            delay = amount * multiplier
+            return {
+                'action': 'execute_command',
+                'command': 'scheduled_shutdown',
+                'data': {'command': command, 'delay_seconds': delay}
+            }
+
+        elif action == 'cancel_scheduled_shutdown':
+            return {
+                'action': 'execute_command',
+                'command': 'cancel_scheduled_shutdown',
+                'data': {}
+            }
+
+        # System control actions - shutdown, restart, exit
+        elif action == 'shutdown':
+            return {
+                'action': 'confirm_and_execute',
+                'command': 'shutdown',
+                'confirmation_message': 'Are you sure you want to shutdown PortAIOS?',
+                'data': {}
+            }
+
+        elif action == 'restart':
+            return {
+                'action': 'confirm_and_execute',
+                'command': 'restart',
+                'confirmation_message': 'Are you sure you want to restart PortAIOS?',
+                'data': {}
+            }
+
+        elif action == 'hibernate':
+            return {
+                'action': 'confirm_and_execute',
+                'command': 'hibernate',
+                'confirmation_message': 'Hibernate the computer?',
+                'data': {}
+            }
+
+        elif action == 'system_sleep':
+            return {
+                'action': 'execute_command',
+                'command': 'sleep',
+                'data': {}
+            }
+
+        elif action == 'lock_screen':
+            return {
+                'action': 'execute_command',
+                'command': 'lock_screen',
+                'data': {}
+            }
+
+        elif action == 'logout':
+            return {
+                'action': 'confirm_and_execute',
+                'command': 'logout',
+                'confirmation_message': 'Are you sure you want to log out?',
+                'data': {}
+            }
         
         return {
             'action': 'unknown', 
@@ -558,8 +871,44 @@ if EEL_AVAILABLE:
     def execute_system_command(command: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute system commands triggered by voice"""
         try:
+            # ── Scheduled shutdown ──────────────────────────────────────────
+            if command == 'scheduled_shutdown':
+                sub_cmd = data.get('command', 'shutdown')
+                delay = int(data.get('delay_seconds', 60))
+                return _scheduled_shutdown.schedule(sub_cmd, delay)
+
+            elif command == 'cancel_scheduled_shutdown':
+                return _scheduled_shutdown.cancel()
+
+            elif command == 'scheduled_shutdown_status':
+                status = _scheduled_shutdown.status()
+                if status:
+                    remaining = status['remaining_seconds']
+                    return {
+                        'success': True,
+                        'message': f"{status['command'].title()} in {remaining}s",
+                        'speak': f"{status['command']} in {remaining} seconds",
+                        'data': status,
+                    }
+                return {'success': True, 'message': 'No shutdown scheduled', 'speak': 'No shutdown is scheduled'}
+
+            # ── Application-level shutdown (quit eel/PortAIOS) ──────────────
+            elif command == 'shutdown':
+                logger.info("Shutdown command received via voice")
+                _graceful_app_shutdown()
+                return {'success': True, 'message': 'System shutting down', 'speak': 'Shutting down PortAIOS'}
+
+            elif command == 'restart':
+                logger.info("Restart command received via voice")
+                _graceful_app_restart()
+                return {'success': True, 'message': 'System restarting', 'speak': 'Restarting PortAIOS'}
+
+            # ── Power management ─────────────────────────────────────────────
+            elif command in ('sleep', 'hibernate', 'lock_screen', 'logout'):
+                return _run_system_power_command(command)
+
             # Handle special update commands
-            if command == 'check_updates':
+            elif command == 'check_updates':
                 from kernel.system_updater import check_for_updates
                 result_data = check_for_updates()
                 
@@ -722,6 +1071,13 @@ if EEL_AVAILABLE:
             'navigation': [
                 "Back to avatar",
                 "Close this view"
+            ],
+            'browserbase': [
+                "Open browserbase",
+                "Launch cloud browser",
+                "Automate google search for AI news",
+                "Browse github.com with browserbase",
+                "Cloud browser"
             ]
         }
 

@@ -1,0 +1,6 @@
+# MiniKernel build configuration
+CONFIG_FILE=/Users/ethertechnology/Desktop/PortAIOS/minikernel/buildroot/config/minikernel_defconfig
+PARALLEL_BUILD=1
+INCLUDE_MODELS=0
+ISO_LABEL=MiniKernel
+MENUCONFIG=1

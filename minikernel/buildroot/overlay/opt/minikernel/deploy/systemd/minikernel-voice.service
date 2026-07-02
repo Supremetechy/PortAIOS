@@ -1,0 +1,48 @@
+# MiniKernel Voice Mode systemd service
+# Runs MiniKernel in voice-controlled mode
+
+[Unit]
+Description=MiniKernel Voice Mode
+Documentation=https://github.com/yourusername/minikernel
+After=network.target sound.target pulseaudio.service
+Requires=sound.target
+
+[Service]
+Type=simple
+User=minikernel
+Group=audio
+WorkingDirectory=/opt/minikernel
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="MINIKERNEL_MODE=voice"
+Environment="MINIKERNEL_LOG_LEVEL=INFO"
+Environment="PULSE_SERVER=/run/user/%U/pulse/native"
+
+# Start MiniKernel in voice mode
+ExecStart=/usr/bin/python3 /opt/minikernel/minikernel/boot.py --mode voice --confirmation voice
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=200%
+
+# Audio access
+SupplementaryGroups=audio
+
+# Security (more relaxed for audio access)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/minikernel/data /opt/minikernel/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minikernel-voice
+
+[Install]
+WantedBy=multi-user.target

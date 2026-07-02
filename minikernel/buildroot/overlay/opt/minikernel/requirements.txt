@@ -1,0 +1,8 @@
+# MiniKernel Python dependencies (minimal for embedded)
+# Most packages are built into Buildroot
+
+# Core dependencies built by Buildroot:
+# - numpy
+# - sqlite3
+
+# Additional packages to install at runtime

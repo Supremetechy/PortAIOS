@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PortAIOS Voice & Gesture Commands - Cheat Sheet</title>
+    <style>
+        @media print {
+            body { margin: 0; }
+            .no-print { display: none !important; }
+            .page-break { page-break-before: always; }
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Courier New', 'Monaco', monospace;
+            background: linear-gradient(135deg, #0a0a1f 0%, #1a1a3f 100%);
+            color: #00ffff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #00ffff;
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 36px;
+            color: #00ff9d;
+            text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: #00ffff;
+            opacity: 0.7;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            background: rgba(0, 255, 255, 0.05);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        
+        .section h2 {
+            color: #00ff9d;
+            font-size: 20px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0, 255, 157, 0.3);
+        }
+        
+        .command-group {
+            margin-bottom: 15px;
+        }
+        
+        .command-group h3 {
+            color: #00ffff;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        
+        .command {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-left: 3px solid #00ff9d;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+        
+        .command code {
+            color: #00ffff;
+            background: rgba(0, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .gesture-section {
+            background: rgba(255, 0, 255, 0.05);
+            border-color: rgba(255, 0, 255, 0.3);
+        }
+        
+        .gesture-section h2 {
+            color: #ff00ff;
+            border-bottom-color: rgba(255, 0, 255, 0.3);
+        }
+        
+        .gesture {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px;
+            margin: 8px 0;
+            border-left: 3px solid #ff00ff;
+            border-radius: 3px;
+        }
+        
+        .gesture-icon {
+            font-size: 32px;
+            margin-right: 15px;
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .gesture-info {
+            flex: 1;
+        }
+        
+        .gesture-name {
+            font-weight: bold;
+            color: #ff00ff;
+            font-size: 13px;
+            margin-bottom: 3px;
+        }
+        
+        .gesture-desc {
+            font-size: 11px;
+            color: #00ffff;
+            opacity: 0.8;
+        }
+        
+        .shortcuts-section {
+            background: rgba(255, 255, 0, 0.05);
+            border-color: rgba(255, 255, 0, 0.3);
+        }
+        
+        .shortcuts-section h2 {
+            color: #ffff00;
+            border-bottom-color: rgba(255, 255, 0, 0.3);
+        }
+        
+        .shortcut {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-left: 3px solid #ffff00;
+            font-size: 12px;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .shortcut-phrase {
+            color: #ffff00;
+            font-weight: bold;
+        }
+        
+        .shortcut-arrow {
+            color: #00ffff;
+            margin: 0 10px;
+        }
+        
+        .shortcut-action {
+            color: #00ffff;
+        }
+        
+        .tips {
+            background: rgba(0, 255, 157, 0.1);
+            border: 1px solid rgba(0, 255, 157, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        
+        .tips h2 {
+            color: #00ff9d;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        
+        .tip {
+            padding: 10px 0;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .tip strong {
+            color: #00ff9d;
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #00ff9d;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 255, 157, 0.5);
+            transition: all 0.3s ease;
+        }
+        
+        .print-button:hover {
+            background: #00ffff;
+            transform: scale(1.05);
+        }
+        
+        @media print {
+            body { background: white; color: black; }
+            .container { border: 2px solid black; box-shadow: none; background: white; }
+            h1, h2, .command-group h3 { color: black; text-shadow: none; }
+            .command, .gesture, .shortcut { border-left-color: black; }
+            .section { border-color: black; }
+            .gesture-name, .shortcut-phrase { color: black; }
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">🖨️ Print Cheat Sheet</button>
+    
+    <div class="container">
+        <header>
+            <h1>⚡ PortAIOS Voice & Gesture Commands</h1>
+            <div class="subtitle">Complete Reference Guide | 32 Interactive Elements</div>
+        </header>
+        
+        <div class="grid">
+            <!-- Voice Commands: Buttons -->
+            <div class="section">
+                <h2>🎤 Voice Commands: Buttons</h2>
+                
+                <div class="command-group">
+                    <h3>Quick Actions</h3>
+                    <div class="command"><code>"Click demo"</code></div>
+                    <div class="command"><code>"Press greet"</code></div>
+                    <div class="command"><code>"Activate glitch"</code></div>
+                    <div class="command"><code>"Toggle effects"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>Avatar Mode</h3>
+                    <div class="command"><code>"Toggle avatar mode"</code></div>
+                    <div class="command"><code>"Dynamic interface"</code></div>
+                    <div class="command"><code>"Generate avatar"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>MiniKernel</h3>
+                    <div class="command"><code>"Boot minikernel"</code></div>
+                    <div class="command"><code>"Halt minikernel"</code></div>
+                    <div class="command"><code>"Clear minikernel"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>System</h3>
+                    <div class="command"><code>"Click theme selector"</code></div>
+                    <div class="command"><code>"AI assistant"</code></div>
+                    <div class="command"><code>"Gesture help"</code></div>
+                </div>
+            </div>
+            
+            <!-- Voice Commands: Dropdowns -->
+            <div class="section">
+                <h2>🎤 Voice Commands: Dropdowns</h2>
+                
+                <div class="command-group">
+                    <h3>Palette Selection</h3>
+                    <div class="command"><code>"Set palette to cyan"</code></div>
+                    <div class="command"><code>"Matrix palette"</code></div>
+                    <div class="command"><code>"Change colors to amber"</code></div>
+                    <div class="command"><code>"Red theme"</code></div>
+                    <div class="command"><code>"Ice colors"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>Activity State</h3>
+                    <div class="command"><code>"Set activity to idle"</code></div>
+                    <div class="command"><code>"Change activity to thinking"</code></div>
+                    <div class="command"><code>"Speaking mode"</code></div>
+                    <div class="command"><code>"Error state"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>Voice Selection</h3>
+                    <div class="command"><code>"Focus voice selector"</code></div>
+                    <div class="command"><code>"Open voice settings"</code></div>
+                </div>
+            </div>
+            
+            <!-- Voice Commands: Sliders -->
+            <div class="section">
+                <h2>🎤 Voice Commands: Sliders</h2>
+                
+                <div class="command-group">
+                    <h3>Expression Controls</h3>
+                    <div class="command"><code>"Set smile to 0.8"</code></div>
+                    <div class="command"><code>"Increase surprise"</code></div>
+                    <div class="command"><code>"Decrease frown"</code></div>
+                    <div class="command"><code>"Wink up"</code></div>
+                    <div class="command"><code>"Maximum viseme"</code></div>
+                    <div class="command"><code>"Minimum detail"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>Slider Shortcuts</h3>
+                    <div class="command"><code>"Smile maximum"</code></div>
+                    <div class="command"><code>"Frown minimum"</code></div>
+                    <div class="command"><code>"Detail up"</code></div>
+                </div>
+            </div>
+            
+            <!-- Voice Commands: Inputs -->
+            <div class="section">
+                <h2>🎤 Voice Commands: Inputs</h2>
+                
+                <div class="command-group">
+                    <h3>Text Inputs</h3>
+                    <div class="command"><code>"Focus speech input"</code></div>
+                    <div class="command"><code>"Open command input"</code></div>
+                    <div class="command"><code>"Focus wake word"</code></div>
+                </div>
+                
+                <div class="command-group">
+                    <h3>Special Controls</h3>
+                    <div class="command"><code>"Toggle conversation mode"</code></div>
+                    <div class="command"><code>"Enable conversation mode"</code></div>
+                    <div class="command"><code>"Disable conversation mode"</code></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Gestures Section -->
+        <div class="section gesture-section">
+            <h2>👋 Gesture Controls</h2>
+            
+            <div class="gesture">
+                <div class="gesture-icon">👉</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Point</div>
+                    <div class="gesture-desc">Highlight and select UI elements</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">👍</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Thumbs Up</div>
+                    <div class="gesture-desc">Activate/click highlighted element</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">👌</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">OK Gesture</div>
+                    <div class="gesture-desc">Confirm or focus element</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">➡️</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Swipe Right</div>
+                    <div class="gesture-desc">Increase slider value</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">⬅️</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Swipe Left</div>
+                    <div class="gesture-desc">Decrease slider value</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">✌️</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Peace Sign</div>
+                    <div class="gesture-desc">Take screenshot</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">✊</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Fist</div>
+                    <div class="gesture-desc">Select/grab mode</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">🤙</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Phone</div>
+                    <div class="gesture-desc">Open browser</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">👋</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Wave</div>
+                    <div class="gesture-desc">Greet or dismiss</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">🤘</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Rock</div>
+                    <div class="gesture-desc">Special mode</div>
+                </div>
+            </div>
+            
+            <div class="gesture">
+                <div class="gesture-icon">🖖</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Spock</div>
+                    <div class="gesture-desc">Live long and prosper (Easter egg)</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shortcuts Section -->
+        <div class="section shortcuts-section page-break">
+            <h2>⚡ Voice Shortcuts & Macros</h2>
+            
+            <div class="command-group">
+                <h3>Quick Actions</h3>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"demo mode"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Click demo</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"say hi"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Click greet</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"go crazy"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Click glitch</span>
+                </div>
+            </div>
+            
+            <div class="command-group">
+                <h3>Theme Shortcuts</h3>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"blue theme"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set palette to cyan</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"green theme"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set palette to matrix</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"red theme"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set palette to red</span>
+                </div>
+            </div>
+            
+            <div class="command-group">
+                <h3>Avatar Shortcuts</h3>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"happy face"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set smile to 1</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"sad face"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set frown to 1</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"surprised face"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Set surprise to 1</span>
+                </div>
+            </div>
+            
+            <div class="command-group">
+                <h3>Macro Sequences</h3>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"morning setup"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Cyan + Greet + Boot</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"demo sequence"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Demo + Cyan + Thinking</span>
+                </div>
+                <div class="shortcut">
+                    <span class="shortcut-phrase">"reset all"</span>
+                    <span class="shortcut-arrow">→</span>
+                    <span class="shortcut-action">Reset to defaults</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tips Section -->
+        <div class="tips">
+            <h2>💡 Pro Tips</h2>
+            
+            <div class="tip">
+                <strong>Wake Word:</strong> Say "Hey AIOS" or click the microphone button to activate voice control.
+            </div>
+            
+            <div class="tip">
+                <strong>Natural Language:</strong> Commands are flexible. Say "Click demo", "Press demo", or just "demo" - all work!
+            </div>
+            
+            <div class="tip">
+                <strong>Gesture Setup:</strong> Click the gesture help button (👆) and allow camera access for gesture control.
+            </div>
+            
+            <div class="tip">
+                <strong>Visual Feedback:</strong> Look for cyan highlights when voice/gesture commands activate elements.
+            </div>
+            
+            <div class="tip">
+                <strong>Create Macros:</strong> Say "record macro [name]", execute commands, then say "stop recording" to save.
+            </div>
+            
+            <div class="tip">
+                <strong>Sensitivity:</strong> Adjust gesture sensitivity in settings if detection is too sensitive or not sensitive enough.
+            </div>
+            
+            <div class="tip">
+                <strong>Command List:</strong> Type <code>window.AIOS.uiVoiceGestureController.getVoiceCommandList()</code> in console for full list.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

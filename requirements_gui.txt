@@ -1,57 +1,28 @@
-# AI-OS Onboarding GUI Requirements
-# Install with: pip install -r requirements_gui.txt
+# =============================================================================
+# PortAIOS — Desktop GUI Requirements
+# =============================================================================
+# Extends the core requirements with GUI frameworks, audio hardware, and
+# full TTS support needed for the native desktop application.
+# Install: pip install -r requirements_gui.txt
 
-# Core GUI framework
+# Core server deps
+-r requirements.txt
+
+# ── Desktop GUI frameworks ────────────────────────────────────────────────────
+# PyQt6 for any native widgets / fallback display paths
 PyQt6>=6.4.0
 
-# Native webview backend used by kernel/display/webview_backend.py.
-# IMPORTANT: install `pywebview`, not `webview` — the latter is an
-# unmaintained, broken PyPI package whose wheel build fails. pywebview
-# installs an importable module named `webview`, which is what the kernel
-# code expects.
+# IMPORTANT: install `pywebview`, NOT `webview` — the latter is a broken
+# unmaintained PyPI package. pywebview exposes an importable module named
+# `webview`, which is what the kernel code imports.
 pywebview>=5.0
 
-# Multimedia support (try both options)
-# Option 1: PyQt6-Multimedia (preferred, if available)
-# PyQt6-Multimedia>=6.4.0
-
-# Option 2: Alternative video support using opencv
-opencv-python>=4.8.0
-Pillow>=10.0.0
-
-# Already required by AI-OS kernel
-# (listed here for completeness)
-# psutil
-# GPUtil
-Eel
-
-psutil>=5.9.0
-GPUtil>=1.4.0
-
-websocket-client>=1.5.0
-websockets>=11.0.0
-
-# Voice Input System Requirements
-# Install with: pip install -r requirements-voice.txt
-
-# Required for avatar bridge (already included in requirements-avatar.txt)
-websockets>=12.0
-numpy>=1.24.0
-soundfile>=0.12.0
-psutil>=5.9.0
-
+# ── Audio hardware (desktop only) ────────────────────────────────────────────
+# Requires PortAudio system library:
+#   macOS:  brew install portaudio
+#   Ubuntu: apt-get install portaudio19-dev
 pyaudio>=0.2.13
-SpeechRecognition>=3.10.0
 
-TTS>=0.22.0
-
-# Optional: Advanced voice recognition (offline)
-# Uncomment if you want server-side voice processing
-# SpeechRecognition>=3.10.0
-# pyaudio>=0.2.13
-
-# Optional: High-fidelity TTS (already in requirements-avatar.txt)
-# TTS>=0.22.0
-
-# Note: Web Speech API (browser-native) works without any backend!
-# The Python backend is optional for advanced features.
+# ── TTS engines (large download — comment out what you don't need) ────────────
+TTS>=0.22.0          # Coqui TTS — high-fidelity neural voices
+piper-tts>=1.4.0     # Piper TTS — low-latency, phoneme-aligned lip-sync

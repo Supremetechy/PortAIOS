@@ -1,0 +1,25 @@
+# MiniKernel Requirements
+
+# Core dependencies
+psutil>=5.9.0          # Process and system monitoring
+
+# Voice processing (reuses PortAIOS components)
+# See ../requirements_gui.txt for full voice stack
+
+# LLM inference (optional)
+llama-cpp-python>=0.2.0  # Local LLM inference with GGUF models
+
+# Vector database for RAG (optional)
+chromadb>=0.4.0        # Vector database for semantic search
+# OR
+# faiss-cpu>=1.7.0     # Alternative: Facebook AI Similarity Search
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Development
+black>=23.0.0          # Code formatting
+flake8>=6.0.0         # Linting
+mypy>=1.0.0           # Type checking

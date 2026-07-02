@@ -1,0 +1,58 @@
+apiVersion: '2021-09-01'
+location: eastus
+name: minikernel
+properties:
+  containers:
+  - name: minikernel
+    properties:
+      image: minikernel:latest
+      resources:
+        requests:
+          cpu: 2.0
+          memoryInGb: 4.0
+      ports:
+      - port: 8080
+        protocol: TCP
+      environmentVariables:
+      - name: MINIKERNEL_MODE
+        value: text
+      - name: MINIKERNEL_LOG_LEVEL
+        value: INFO
+      - name: MINIKERNEL_CONFIRMATION
+        value: text
+      volumeMounts:
+      - name: data
+        mountPath: /opt/minikernel/data
+      - name: logs
+        mountPath: /opt/minikernel/logs
+      livenessProbe:
+        exec:
+          command:
+          - python3
+          - -c
+          - "import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('healthy')"
+        periodSeconds: 10
+        failureThreshold: 3
+  volumes:
+  - name: data
+    azureFile:
+      shareName: minikernel-data
+      storageAccountName: minikernelstorage
+      storageAccountKey: YOUR_STORAGE_KEY
+  - name: logs
+    azureFile:
+      shareName: minikernel-logs
+      storageAccountName: minikernelstorage
+      storageAccountKey: YOUR_STORAGE_KEY
+  osType: Linux
+  restartPolicy: Always
+  ipAddress:
+    type: Public
+    ports:
+    - protocol: TCP
+      port: 8080
+    dnsNameLabel: minikernel
+tags:
+  environment: production
+  application: minikernel
+type: Microsoft.ContainerInstance/containerGroups

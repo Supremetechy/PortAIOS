@@ -430,6 +430,27 @@ class VoiceUI {
     this.elements.micButton.addEventListener('click', callback);
   }
 
+  setMicrophoneState(isActive) {
+    const micButton = this.elements.micButton;
+    if (micButton) {
+      if (isActive) {
+        micButton.classList.add('active');
+        micButton.setAttribute('aria-pressed', 'true');
+        const label = micButton.querySelector('.mic-label');
+        if (label) label.textContent = 'Stop Microphone';
+      } else {
+        micButton.classList.remove('active');
+        micButton.setAttribute('aria-pressed', 'false');
+        const label = micButton.querySelector('.mic-label');
+        if (label) label.textContent = 'Push to Talk';
+      }
+    }
+  }
+
+  getMicrophoneButton() {
+    return this.elements.micButton;
+  }
+
   destroy() {
     if (this.elements.main && this.elements.main.parentNode) {
       this.elements.main.parentNode.removeChild(this.elements.main);

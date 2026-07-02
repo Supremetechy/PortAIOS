@@ -76,12 +76,26 @@ class LipSyncAvatar {
   }
 
   setupScene() {
+    if (this._destroyed) return;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+
+    if (width === 0 || height === 0) {
+      if (!this._sceneInitRetryId) {
+        this._sceneInitRetryId = requestAnimationFrame(() => {
+          this._sceneInitRetryId = null;
+          this.setupScene();
+        });
+      }
+      return;
+    }
+
     // Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
     
     // Camera
-    const aspect = this.container.clientWidth / this.container.clientHeight;
+    const aspect = width / height;
     this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
     this.camera.position.set(0, 1.6, 2);
     this.camera.lookAt(0, 1.6, 0);
@@ -91,7 +105,7 @@ class LipSyncAvatar {
       antialias: true,
       alpha: true 
     });
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.container.appendChild(this.renderer.domElement);
     
@@ -379,6 +393,10 @@ class LipSyncAvatar {
   onResize() {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
+
+    if (!width || !height || !this.camera || !this.renderer) {
+      return;
+    }
     
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -387,6 +405,8 @@ class LipSyncAvatar {
   }
 
   destroy() {
+    this._destroyed = true;
+    if (this._sceneInitRetryId) cancelAnimationFrame(this._sceneInitRetryId);
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
     }

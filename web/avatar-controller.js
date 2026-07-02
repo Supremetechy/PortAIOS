@@ -170,12 +170,12 @@ class AvatarController {
                                 voices.find(v => v.lang === 'en-US' && v.localService) || 
                                 voices[0];
           } else {
-            // Chrome/Edge: Prefer Google voices, then Microsoft Natural voices
-            this.selectedVoice = voices.find(v => 
-              v.name.includes('Google US English') || v.name.includes('Google UK English')
-            ) || voices.find(v => 
-              v.name.includes('Microsoft') && v.name.includes('Natural')
-            ) || voices.find(v => v.lang.startsWith('en'));
+            // Chrome/Edge: Prefer local English voices first — remote Google voices fail
+            // silently on localhost/app mode (onerror: 'network' / 'synthesis-failed')
+            this.selectedVoice = voices.find(v => v.lang.startsWith('en') && v.localService)
+              || voices.find(v => v.name.includes('Google US English') || v.name.includes('Google UK English'))
+              || voices.find(v => v.name.includes('Microsoft') && v.name.includes('Natural'))
+              || voices.find(v => v.lang.startsWith('en'));
           }
           
           console.log('[Avatar] Voice selected:', this.selectedVoice?.name || 'default');
@@ -543,8 +543,21 @@ class AvatarController {
 
           // Common non-critical errors that should not break the flow
           const nonCriticalErrors = ['interrupted', 'canceled', 'network', 'synthesis-failed', 'synthesis-unavailable'];
-          
+
           if (nonCriticalErrors.includes(event.error)) {
+            // 'network' / 'synthesis-failed' usually means a remote voice (e.g. Google US
+            // English) was selected and failed on localhost. Retry with a local voice.
+            if (event.error === 'network' || event.error === 'synthesis-failed') {
+              const localVoice = window.speechSynthesis.getVoices()
+                .find(v => v.lang.startsWith('en') && v.localService);
+              if (localVoice && utterance.voice !== localVoice) {
+                console.warn('[Avatar] Remote voice failed, retrying with local voice:', localVoice.name);
+                this.selectedVoice = localVoice;
+                // Re-attempt via the public speak() path so queue/state are managed correctly
+                this.speakViaWebSpeech(text).then(resolve).catch(() => resolve());
+                return;
+              }
+            }
             console.log('[Avatar] Speech error (non-critical):', event.error);
             resolve(); // Resolve instead of reject for graceful degradation
           } else if (event.error === 'not-allowed') {

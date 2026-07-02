@@ -1,0 +1,36 @@
+{{- if .Values.configMap.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "minikernel.fullname" . }}
+  labels:
+    {{- include "minikernel.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    mode: {{ .Values.minikernel.mode }}
+    log_level: {{ .Values.minikernel.logLevel }}
+    confirmation_mode: {{ .Values.minikernel.confirmationMode }}
+    
+    llm:
+      enabled: {{ .Values.minikernel.llm.enabled }}
+      {{- if .Values.minikernel.llm.enabled }}
+      model: {{ .Values.minikernel.llm.model }}
+      context_size: {{ .Values.minikernel.llm.contextSize }}
+      threads: {{ .Values.minikernel.llm.threads }}
+      gpu_layers: {{ .Values.minikernel.llm.gpuLayers }}
+      {{- end }}
+    
+    security:
+      capabilities:
+        file_read: {{ .Values.minikernel.capabilities.fileRead }}
+        file_write: {{ .Values.minikernel.capabilities.fileWrite }}
+        file_delete: {{ .Values.minikernel.capabilities.fileDelete }}
+        process_list: {{ .Values.minikernel.capabilities.processList }}
+        process_kill: {{ .Values.minikernel.capabilities.processKill }}
+        package_install: {{ .Values.minikernel.capabilities.packageInstall }}
+        system_info: {{ .Values.minikernel.capabilities.systemInfo }}
+  
+  {{- with .Values.configMap.data }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# MiniKernel startup script
+# Boots the MiniKernel microkernel and AI services
+#
+
+MINIKERNEL_HOME=/opt/minikernel
+MINIKERNEL_PID=/var/run/minikernel.pid
+
+start() {
+    echo "Starting MiniKernel..."
+    
+    # Mount VirtualBox shared folders if available
+    if [ -x /usr/sbin/VBoxControl ]; then
+        /usr/sbin/VBoxControl --nologo sharedfolder list > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            mkdir -p /mnt/shared
+            mount -t vboxsf shared /mnt/shared 2>/dev/null
+        fi
+    fi
+    
+    # Mount persistent disk if available
+    if [ -b /dev/sda1 ]; then
+        mkdir -p /mnt/persistent
+        mount /dev/sda1 /mnt/persistent
+        export MINIKERNEL_PERSIST=/mnt/persistent
+    fi
+    
+    # Set up Python environment
+    export PYTHONPATH=$MINIKERNEL_HOME:$PYTHONPATH
+    export PATH=$MINIKERNEL_HOME/bin:$PATH
+    
+    # Start MiniKernel
+    cd $MINIKERNEL_HOME
+    /usr/bin/python3 -m minikernel.boot > /var/log/minikernel.log 2>&1 &
+    echo $! > $MINIKERNEL_PID
+    
+    echo "MiniKernel started (PID: $(cat $MINIKERNEL_PID))"
+}
+
+stop() {
+    echo "Stopping MiniKernel..."
+    if [ -f $MINIKERNEL_PID ]; then
+        kill $(cat $MINIKERNEL_PID)
+        rm -f $MINIKERNEL_PID
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        sleep 2
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

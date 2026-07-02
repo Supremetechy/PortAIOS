@@ -1,0 +1,72 @@
+{
+  "family": "minikernel",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/minikernel-task-role",
+  "containerDefinitions": [
+    {
+      "name": "minikernel",
+      "image": "minikernel:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "MINIKERNEL_MODE",
+          "value": "text"
+        },
+        {
+          "name": "MINIKERNEL_LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "MINIKERNEL_CONFIRMATION",
+          "value": "text"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/minikernel",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "minikernel",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python3 -c \"import sys; sys.path.insert(0, '/opt/minikernel'); from minikernel.core.microkernel import MicroKernel; print('healthy')\" || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "mountPoints": [
+        {
+          "sourceVolume": "minikernel-data",
+          "containerPath": "/opt/minikernel/data",
+          "readOnly": false
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "name": "minikernel-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-XXXXXXXXX",
+        "rootDirectory": "/minikernel/data",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}

@@ -24,3 +24,7 @@ dist/
 .DS_Store
 **/.DS_Store
 Icon?
+
+# .env files
+.env
+.env/*

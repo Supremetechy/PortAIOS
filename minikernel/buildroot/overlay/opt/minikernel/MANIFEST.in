@@ -1,0 +1,30 @@
+# MiniKernel Package Manifest
+# Specifies additional files to include in distribution
+
+# Documentation
+include README.md
+include LICENSE
+include ARCHITECTURE.md
+include QUICKSTART.md
+include DEMO.md
+
+# Configuration files
+include requirements.txt
+include pyproject.toml
+
+# Security policies
+recursive-include minikernel/security *.json
+
+# Model files (if present)
+recursive-include minikernel/models *.onnx *.json
+
+# Deployment files
+recursive-include minikernel/deploy *.sh *.ps1 *.service *.yml *.yaml
+
+# Exclude
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store
+prune tests
+prune docs
