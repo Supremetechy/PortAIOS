@@ -6,7 +6,6 @@
 // Listen for backend state updates
 if (typeof eel !== 'undefined') {
     // Exposed function that backend calls to update guardian state
-    eel.expose(guardian_state_update);
     function guardian_state_update(state) {
         const guardian = window.AIOS?.guardian;
         if (!guardian) {
@@ -29,8 +28,9 @@ if (typeof eel !== 'undefined') {
         }
     }
     
+    eel.expose(guardian_state_update);
+    
     // Exposed function for backend to make guardian speak
-    eel.expose(guardian_speak);
     function guardian_speak(text, emotion, gesture) {
         const guardian = window.AIOS?.guardian;
         if (!guardian) {
@@ -42,8 +42,9 @@ if (typeof eel !== 'undefined') {
         guardian.speak(text, { emotion, gesture });
     }
     
+    eel.expose(guardian_speak);
+    
     // Exposed function for backend to stop guardian
-    eel.expose(guardian_stop);
     function guardian_stop() {
         const guardian = window.AIOS?.guardian;
         if (!guardian) return;
@@ -51,6 +52,8 @@ if (typeof eel !== 'undefined') {
         console.log('[GuardianBridge] Backend stop request');
         guardian.stop();
     }
+    
+    eel.expose(guardian_stop);
     
     console.log('[GuardianBridge] Eel integration ready');
 }

@@ -32,6 +32,9 @@ class Vendor(Enum):
     APPLE = "apple"
     ARM = "arm"
     QUALCOMM = "qualcomm"
+    HISILICON = "hisilicon"
+    UNISOC = "unisoc"
+    ZHAOXIN = "zhaoxin"
     UNKNOWN = "unknown"
 
 

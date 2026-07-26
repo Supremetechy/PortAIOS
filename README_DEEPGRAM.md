@@ -41,7 +41,7 @@ Edit `config.json` to customize your voice agent:
       "provider": {"type": "deepgram", "model": "nova-3"}
     },
     "think": {
-      "provider": {"type": "google", "model": "gemini-2.0-flash-exp"},
+      "provider": {"type": "google", "model": "gemini-3.5-flash-exp"},
       "prompt": "You are the AI agent for an AI Operating System..."
     },
     "speak": {

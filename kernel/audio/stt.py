@@ -18,6 +18,7 @@ import tempfile
 import sys
 from abc import ABC, abstractmethod
 from typing import Optional
+import whisper
 
 logger = logging.getLogger("AIOS.audio.stt")
 
@@ -51,7 +52,7 @@ class WhisperSTTBackend(STTBackend):
 
     def is_available(self) -> bool:
         try:
-            import whisper  # noqa: F401
+            # noqa: F401
             # Also need a way to record audio
             self._record_cmd = self._find_record_command()
             return self._record_cmd is not None
@@ -93,7 +94,7 @@ class WhisperSTTBackend(STTBackend):
 
     def _ensure_model(self):
         if self._model is None:
-            import whisper
+         
             self._model = whisper.load_model(self._model_name)
 
     def listen(self, timeout_seconds: int = 10) -> str:

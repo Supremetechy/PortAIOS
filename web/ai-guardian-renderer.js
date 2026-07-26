@@ -11,7 +11,7 @@
  * HolographicFaceRenderer / BinaryAvatarRenderer.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
 
 // ─── Palette table (0–1 float RGB) ───────────────────────────────────────────
 const PALETTES = {

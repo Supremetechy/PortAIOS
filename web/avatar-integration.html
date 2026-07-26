@@ -1054,7 +1054,107 @@
         .mk-stat-k { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(0,255,157,0.35); }
         .mk-stat-v { font-family: var(--font-data); font-size: 11px; color: var(--g0); text-shadow: 0 0 6px rgba(0,255,157,0.4); }
 
+        /* ─────────────────────────────────────────────
+           DOCK — mode switcher, floating above the mic bar
+        ───────────────────────────────────────────── */
+        .dock {
+            position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%);
+            z-index: 25; display: flex; align-items: center; gap: 6px;
+            padding: 6px 8px; max-width: min(94vw, 900px); overflow-x: auto;
+            background: rgba(1,6,8,0.92); border: 1px solid rgba(0,255,157,0.18);
+            border-radius: 10px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        }
+        .dock-btn {
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            padding: 6px 12px; min-width: 58px; flex-shrink: 0;
+            background: rgba(0,255,157,0.04); border: 1px solid rgba(0,255,157,0.14);
+            border-radius: 6px; color: var(--g0); cursor: pointer;
+            font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.15em;
+            text-transform: uppercase; transition: all 0.18s;
+        }
+        .dock-btn .icon { font-size: 1.3em; line-height: 1; }
+        .dock-btn:hover {
+            background: rgba(0,255,157,0.12); border-color: rgba(0,255,157,0.45);
+            box-shadow: 0 0 12px rgba(0,255,157,0.18);
+        }
+        .dock-btn.active {
+            background: rgba(0,245,255,0.14); border-color: var(--cyan); color: var(--cyan);
+            box-shadow: 0 0 14px rgba(0,245,255,0.25);
+        }
+
+        /* ─────────────────────────────────────────────
+           MINI PIP — persistent "return to avatar" affordance
+        ───────────────────────────────────────────── */
+        .mini-pip {
+            position: fixed; bottom: 140px; right: 20px; z-index: 25;
+            width: 78px; height: 58px;
+            background: rgba(1,6,8,0.92); border: 1px solid rgba(0,255,157,0.35);
+            border-radius: 8px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 3px;
+            cursor: pointer; opacity: 0; pointer-events: none;
+            transition: opacity 0.25s, transform 0.25s; transform: translateY(8px);
+        }
+        .mini-pip.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        .mini-pip:hover { background: rgba(0,255,157,0.1); border-color: var(--g0); }
+        .mini-pip-icon { font-size: 1.3em; }
+        .mini-pip-label { font-size: 0.6em; letter-spacing: 0.2em; color: rgba(0,255,157,0.7); }
+
+        /* ─────────────────────────────────────────────
+           PANEL CHROME — drag handle + minimize toggle
+           Injected onto #top-bar, #left-panel, #right-panel,
+           #bottom-bar and .dock so any overlay that might be
+           covering the avatar/scene can be moved aside or
+           collapsed down to a small strip.
+        ───────────────────────────────────────────── */
+        .hud-chrome {
+            display: flex; align-items: center; gap: 6px;
+            flex: 0 0 auto;
+            padding: 3px 8px;
+            background: rgba(0,20,14,0.9);
+            border: 1px solid rgba(0,255,157,0.25);
+            border-radius: 4px;
+            pointer-events: auto;
+            font-family: var(--font-display); font-size: 8px; font-weight: 700;
+            letter-spacing: 0.3em; text-transform: uppercase; color: var(--cyan);
+        }
+        #left-panel .hud-chrome, #right-panel .hud-chrome {
+            margin-bottom: 2px; position: sticky; top: 0; z-index: 3;
+        }
+        .hud-grip {
+            cursor: grab; opacity: 0.55; user-select: none; -webkit-user-select: none;
+            touch-action: none; line-height: 1;
+        }
+        .hud-grip:active { cursor: grabbing; opacity: 1; }
+        .hud-chrome-label {
+            flex: 1 1 auto; min-width: 0; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; opacity: 0.85;
+        }
+        .hud-min-btn {
+            background: transparent; border: 1px solid rgba(0,255,157,0.35);
+            color: var(--g0); width: 16px; height: 16px; padding: 0;
+            line-height: 14px; border-radius: 3px; cursor: pointer; font-size: 10px;
+            flex: 0 0 auto;
+        }
+        .hud-min-btn:hover { background: rgba(0,255,157,0.15); border-color: var(--g0); }
+
+        /* Collapsed state: only the chrome strip stays visible */
+        .hud-collapsed > *:not(.hud-chrome) { display: none !important; }
+        #left-panel.hud-collapsed,
+        #right-panel.hud-collapsed {
+            bottom: auto !important; height: auto !important;
+            min-height: 0 !important; max-height: none !important;
+            overflow: visible !important; padding-right: 0 !important; gap: 0 !important;
+        }
+        #top-bar.hud-collapsed,
+        #bottom-bar.hud-collapsed {
+            right: auto !important; height: auto !important;
+            padding: 6px 10px !important; gap: 0 !important;
+        }
+        .dock.hud-collapsed { padding: 6px !important; gap: 0 !important; }
+
     </style>
+    <link rel="stylesheet" href="/screen-styles.css">
 </head>
 <body>
 
@@ -1165,6 +1265,12 @@
     <!-- ── Speech bubble ── -->
     <div id="speech-bubble" class="hud"></div>
 
+    <!-- Mini pip: click to return to avatar mode -->
+    <div class="mini-pip" id="mini-pip" title="Return to Avatar" onclick="switchToMode('avatar')" role="button" tabindex="0" aria-label="Return to avatar mode">
+        <span class="mini-pip-icon">⚡</span>
+        <span class="mini-pip-label">AVATAR</span>
+    </div>
+
     <!-- ── Top bar ── -->
     <div id="top-bar" class="hud">
         <div>
@@ -1197,6 +1303,44 @@
         </a>
         <span class="top-clock" id="clock">--:--:--</span>
     </div>
+
+     <!-- Dock — always visible mode switcher -->
+    <nav class="dock" aria-label="Mode switcher">
+      <button type="button" class="dock-btn active" id="btn-avatar"    onclick="switchToMode('avatar')"    aria-label="Avatar mode">
+        <span class="icon">⚡</span>AVATAR
+      </button>
+      <button type="button" class="dock-btn"       id="btn-dashboard" onclick="switchToMode('dashboard')" aria-label="Dashboard">
+        <span class="icon">📊</span>DASH
+      </button>
+      <button type="button" class="dock-btn"       id="btn-desktop"   onclick="switchToMode('desktop')"   aria-label="File browser">
+        <span class="icon">📁</span>FILES
+      </button>
+      <button type="button" class="dock-btn"       id="btn-browser"   onclick="switchToMode('browser')"   aria-label="Web browser">
+        <span class="icon">🌐</span>BROWSER
+      </button>
+      <button type="button" class="dock-btn"       id="btn-terminal"  onclick="switchToMode('terminal')"  aria-label="Terminal">
+        <span class="icon">💻</span>TERMINAL
+      </button>
+      <button type="button" class="dock-btn"       id="btn-document"  onclick="switchToMode('document')"  aria-label="Documents">
+        <span class="icon">📄</span>DOCS
+      </button>
+      <button type="button" class="dock-btn" id="btn-games"
+              onclick="switchToMode('games')"
+              aria-label="AIOS Mini-Games" title="Launch AIOS Mini-Games"
+              style="border-color:rgba(255,0,255,.35);background:rgba(255,0,255,.05);">
+        <span class="icon">🎮</span>GAMES
+      </button>
+      <button type="button" class="dock-btn" id="btn-avatar-creator"
+              onclick="window.screenManager.openScreen('avatar-creator')"
+              aria-label="Avatar Creator" title="Create Custom Avatar">
+        <span class="icon">🤖</span>CREATOR
+      </button>
+      <button type="button" class="dock-btn" id="btn-test-suite"
+              onclick="window.screenManager.openScreen('test-suite')"
+              aria-label="Test Suite" title="Test Voice & Gestures">
+        <span class="icon">🧪</span>TESTS
+      </button>
+    </nav>
 
     <!-- ── Left panel: Telemetry ── -->
     <div id="left-panel" class="hud">
@@ -1311,7 +1455,7 @@
                 <button class="hud-btn" id="btn-effects">CRT Off</button>
             </div>
             <div style="margin-top:8px;">
-                <button id="btn-games" type="button" onclick="window.open('games/AIOS-Games.html','_blank')" style="
+                <button id="btn-games-quickaction" type="button" onclick="window.open('games/AIOS-Games.html','_blank')" style="
                     width:100%; padding:9px 12px;
                     background:linear-gradient(135deg,rgba(255,0,255,.12) 0%,rgba(0,242,255,.08) 100%);
                     border:1px solid rgba(255,0,255,.4);
@@ -1414,6 +1558,17 @@
 <script type="text/javascript" src="./confirmation-dialog.js"></script>
 <script type="text/javascript" src="./browserbase-panel.js"></script>
 
+<script type="text/javascript" src="./deepgram-voice-agent.js"></script>
+<script type="text/javascript" src="./deepgram-voice-integration.js"></script>
+<script type="text/javascript" src="./deepgram-status-indicator.js"></script>
+
+ <!-- OS Integration Components -->
+  <script src="/os-file-browser.js"></script>
+  <script src="/os-app-launcher.js"></script>
+  <script src="/os-browser.js"></script>
+  <script src="/os-system-tray.js"></script>
+  <script src="/os-integration-loader.js"></script>
+
 <!-- ═══ Scripts ═══ -->
 <script type="module">
     // ═══ Lipsync & Voice System Imports ═══
@@ -1431,12 +1586,12 @@
     import { AdvancedDesktopBridge } from './advanced-desktop-bridge.js';
     import { UIThemeManager, UI_THEMES } from './ui-themes.js';
     import { MobileGestureHandler } from './mobile-gestures.js';
-    import {  OnboardingVoiceIntegration } from './onboarding-voice-integration.js';
+    import { OnboardingVoiceIntegration } from './onboarding-voice-integration.js';
     import { LipSyncAvatar } from './avatar-3d-lipsync.js';
     import { AnimationPlayer } from './avatar-animations.js';
     import { AvatarCreatorController } from './avatar-creator.js';
     import { AvatarCreatorPro } from './avatar-creator-pro.js';
-    
+
     // ═══ Voice Keyboard Commands ═══
     import { VoiceKeyboardController } from './voice-keyboard-controller.js';
     
@@ -1570,8 +1725,16 @@
                     console.log('[AIOS] Running without backend, using sample data');
                 }
             }
-        
 
+            // Load sample media from backend if available
+            if (typeof eel !== 'undefined') {
+                try {
+                    const media = await eel.get_desktop_media()();
+                    console.log('[AIOS] Loaded media from backend:', media);
+                } catch (err) {
+                    console.log('[AIOS] Running without backend, using sample data');
+                }
+            }
 
     // ── System telemetry ──────────────────────────────────────────────────
     function updateTelemetry(status) {
@@ -2837,6 +3000,91 @@
         });
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // PANEL CHROME — drag handle + minimize toggle for every overlay
+    // (top bar, telemetry/control panels, command bar, mode dock) so
+    // the user can move or shrink anything that covers the avatar/scene.
+    // ═══════════════════════════════════════════════════════════════
+    function initPanelChrome() {
+        const targets = [
+            { el: document.getElementById('top-bar'),     label: 'AIOS',        prepend: false },
+            { el: document.getElementById('left-panel'),  label: 'Telemetry',   prepend: true  },
+            { el: document.getElementById('right-panel'), label: 'Controls',    prepend: true  },
+            { el: document.getElementById('bottom-bar'),  label: 'Command Bar', prepend: false },
+            { el: document.querySelector('.dock'),        label: 'Mode Switch', prepend: false },
+        ];
+
+        targets.forEach(({ el, label, prepend }) => {
+            if (!el || el.dataset.hudChrome) return;
+            el.dataset.hudChrome = '1';
+
+            const chrome = document.createElement('div');
+            chrome.className = 'hud-chrome';
+            chrome.innerHTML =
+                '<span class="hud-grip" title="Drag to move">⠿</span>' +
+                '<span class="hud-chrome-label">' + label + '</span>' +
+                '<button type="button" class="hud-min-btn" title="Minimize panel" aria-label="Minimize panel">─</button>';
+
+            if (prepend) el.insertBefore(chrome, el.firstChild);
+            else el.appendChild(chrome);
+
+            const grip = chrome.querySelector('.hud-grip');
+            const minBtn = chrome.querySelector('.hud-min-btn');
+
+            // ── Minimize / restore ──
+            minBtn.addEventListener('click', () => {
+                const collapsed = el.classList.toggle('hud-collapsed');
+                minBtn.textContent = collapsed ? '▢' : '─';
+                minBtn.title = collapsed ? 'Restore panel' : 'Minimize panel';
+                minBtn.setAttribute('aria-label', minBtn.title);
+            });
+
+            // ── Drag to move ──
+            let dragging = false, moved = false;
+            let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+            grip.addEventListener('pointerdown', e => {
+                if (e.button !== 0) return;
+                dragging = true; moved = false;
+                const rect = el.getBoundingClientRect();
+                startX = e.clientX; startY = e.clientY;
+                startLeft = rect.left; startTop = rect.top;
+                grip.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+
+            grip.addEventListener('pointermove', e => {
+                if (!dragging) return;
+                const dx = e.clientX - startX, dy = e.clientY - startY;
+                if (!moved) {
+                    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+                    moved = true;
+                    const rect = el.getBoundingClientRect();
+                    el.style.height = rect.height + 'px';
+                    el.style.left = startLeft + 'px';
+                    el.style.top = startTop + 'px';
+                    el.style.right = 'auto';
+                    el.style.bottom = 'auto';
+                    el.style.transform = 'none';
+                }
+                const maxLeft = window.innerWidth - 40;
+                const maxTop = window.innerHeight - 40;
+                el.style.left = Math.min(Math.max(0, startLeft + dx), maxLeft) + 'px';
+                el.style.top = Math.min(Math.max(0, startTop + dy), maxTop) + 'px';
+            });
+
+            const endDrag = e => {
+                dragging = false;
+                if (grip.hasPointerCapture && grip.hasPointerCapture(e.pointerId)) {
+                    grip.releasePointerCapture(e.pointerId);
+                }
+            };
+            grip.addEventListener('pointerup', endDrag);
+            grip.addEventListener('pointercancel', endDrag);
+        });
+    }
+    initPanelChrome();
+
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
         if (e.ctrlKey || e.metaKey) {
@@ -3264,6 +3512,10 @@
         import { DynamicUIManager, UI_MODES } from './dynamic-ui-manager.js';
         import { ReactAvatarController } from './react-avatar-bridge.js';
         import { AvatarModeSwitcher, AVATAR_MODES } from './avatar-mode-switcher.js';
+        import { screenManager } from './screen-manager.js';
+        import { createAvatarCreatorScreen, initAvatarCreator } from './screens/avatar-creator-screen.js';
+        import { createGamesScreen, initGamesScreen } from './screens/games-screen.js';
+        import { createTestSuiteScreen, initTestSuite } from './screens/test-suite-screen.js';
 
         // Resolve model URL from query string (mirrors Block 1 — module scopes are isolated)
         const _pageModel = new URLSearchParams(window.location.search).get('model');
@@ -3275,6 +3527,32 @@
         let reactAvatar = null;
         let avatarSwitcher = null;
         let dynamicUI = null;  // Declare dynamicUI variable
+
+        // ── Dock navigation — mode buttons in the top bar call this ────────
+        // Delegates to handleModeSwitch() (defined below) for the modes it
+        // already knows about; 'dashboard' and 'games' aren't part of that
+        // voice-command switch, so they're handled directly here.
+        window.switchToMode = async function switchToMode(mode, opts = {}) {
+            document.querySelectorAll('.dock-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById(`btn-${mode}`);
+            if (btn) btn.classList.add('active');
+
+            const pip = document.getElementById('mini-pip');
+            if (pip) pip.classList.toggle('visible', mode !== 'avatar');
+
+            if (!dynamicUI) return;
+
+            if (mode === 'dashboard') {
+                dynamicUI.showDashboard({ uptime: document.getElementById('uptime')?.textContent });
+                return;
+            }
+            if (mode === 'games') {
+                dynamicUI.backToAvatar();
+                await screenManager.openScreen('games');
+                return;
+            }
+            await handleModeSwitch(mode, opts);
+        };
 
         // Initialize
         async function init() {
@@ -3343,6 +3621,28 @@
             window.AvatarModeSwitcher = AvatarModeSwitcher;
             window.AVATAR_MODES = AVATAR_MODES;
             window.applyAvatarCustomization?.();
+
+            // Register fullscreen/modal screens opened from the dock
+            screenManager.registerScreen('avatar-creator', {
+                type: 'modal',
+                title: '🤖 Avatar Creator Pro',
+                size: 'large',
+                content: createAvatarCreatorScreen,
+                onOpen: initAvatarCreator
+            });
+            screenManager.registerScreen('games', {
+                type: 'fullscreen',
+                title: '🎮 AIOS Mini-Games',
+                content: createGamesScreen,
+                onOpen: initGamesScreen
+            });
+            screenManager.registerScreen('test-suite', {
+                type: 'modal',
+                title: '🧪 Test Suite - Voice & Gesture UI',
+                size: 'large',
+                content: createTestSuiteScreen,
+                onOpen: initTestSuite
+            });
 
             // Listen for mode changes
             window.addEventListener('dynamicui:modeChanged', (e) => {

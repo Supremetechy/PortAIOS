@@ -25,7 +25,14 @@ document.addEventListener('DOMContentLoaded', () => {
   prevButton.id = 'prev-button';
   prevButton.style.marginRight = '10px';
   prevButton.style.display = 'none';
-  onboardingContent.insertBefore(prevButton, nextButton);
+  
+  // Check if nextButton is actually a child of onboardingContent before inserting
+  if (nextButton && nextButton.parentNode === onboardingContent) {
+    onboardingContent.insertBefore(prevButton, nextButton);
+  } else if (onboardingContent) {
+    // Fallback: append to onboardingContent if nextButton location is unknown
+    onboardingContent.appendChild(prevButton);
+  }
 
   // ─── Speech gating ──────────────────────────────────────────────────
   // AudioContext requires a user gesture before it can produce sound, so

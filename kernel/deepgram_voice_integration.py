@@ -8,8 +8,12 @@ voice assistant infrastructure.
 
 import os
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, TYPE_CHECKING
 from pathlib import Path
+
+# Load environment variables from .env file
+from kernel.env_loader import ensure_env_loaded
+ensure_env_loaded()
 
 logger = logging.getLogger("AIOS.DeepGramIntegration")
 
@@ -17,6 +21,12 @@ try:
     from kernel.audio.deepgram_backend import DeepGramVoiceAgent, get_deepgram_agent
     DEEPGRAM_AVAILABLE = True
 except ImportError:
+    if TYPE_CHECKING:
+        from typing import Any as DeepGramVoiceAgent  # pragma: no cover
+        from typing import Any as get_deepgram_agent  # pragma: no cover
+    else:
+        DeepGramVoiceAgent = None  # type: ignore[assignment]
+        get_deepgram_agent = None  # type: ignore[assignment]
     DEEPGRAM_AVAILABLE = False
     logger.warning("DeepGram backend not available")
 
@@ -96,7 +106,7 @@ class DeepGramVoiceIntegration:
                 return False
             
             # Start the agent
-            self._agent.start()
+            self._agent.start()  # type: ignore[union-attr]
             self._enabled = True
             logger.info("✅ DeepGram voice agent enabled")
             return True
@@ -151,6 +161,9 @@ class DeepGramVoiceIntegration:
         """
         if not self._enabled or not self._agent:
             logger.warning("DeepGram agent not enabled")
+            return
+        if get_deepgram_agent is None:
+            logger.warning("DeepGram backend not available")
             return
         
         try:

@@ -34,6 +34,9 @@ SpeechRecognition>=3.10.0
 # ── DeepGram Voice Agent (STT + LLM + TTS unified pipeline) ──────────────────
 deepgram-sdk>=3.0.0
 
+# ── Environment Variable Loading ─────────────────────────────────────────────
+python-dotenv>=1.0.0
+
 # ── Computer vision & gesture ────────────────────────────────────────────────
 # opencv-python pulls in display libs; use headless variant in Docker.
 # The requirements-server.txt file overrides this with opencv-python-headless.

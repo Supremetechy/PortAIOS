@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@mediapipe/holistic": "^0.5.1675471629",
+    "whisper": "^0.3.3"
+  }
+}

@@ -28,3 +28,5 @@ Icon?
 # .env files
 .env
 .env/*
+*.md
+*.serverV2.py

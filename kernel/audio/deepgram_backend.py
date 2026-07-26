@@ -14,6 +14,10 @@ import tempfile
 from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 
+# Load environment variables from .env file
+from kernel.env_loader import ensure_env_loaded
+ensure_env_loaded()
+
 logger = logging.getLogger("AIOS.audio.deepgram")
 
 try:
@@ -27,7 +31,8 @@ try:
     from deepgram.types.think_settings_v1provider import (
         ThinkSettingsV1Provider_OpenAi,
         ThinkSettingsV1Provider_Anthropic,
-        ThinkSettingsV1Provider_Google
+        ThinkSettingsV1Provider_Google,
+        ThinkSettingsV1Provider_ElevenLabs,
     )
     from deepgram.types.speak_settings_v1 import SpeakSettingsV1
     from deepgram.types.speak_settings_v1provider import SpeakSettingsV1Provider_Deepgram
@@ -196,7 +201,7 @@ class DeepGramVoiceAgent:
         return AgentV1Settings(
             audio=audio_settings,
             agent=AgentV1SettingsAgent(
-                listen=AgentV1SettingsAgentListen(provider=listen_provider),
+                listen=AgentV1SettingsAgentListen(provider=listen_provider),  # type: ignore[arg-type]
                 think=ThinkSettingsV1(
                     provider=think_provider,
                     prompt=think_config.get("prompt", "You are a helpful AI assistant.")

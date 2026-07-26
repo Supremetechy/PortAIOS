@@ -9,7 +9,7 @@ from deepgram.types.think_settings_v1provider import ThinkSettingsV1Provider_Ope
 from deepgram.types.speak_settings_v1 import SpeakSettingsV1
 from deepgram.types.speak_settings_v1provider import SpeakSettingsV1Provider_Deepgram
 
-client = DeepgramClient()
+client = DeepgramClient()  # type: ignore[call-arg]
 
 with client.agent.v1.connect() as agent:
     settings = AgentV1Settings(
@@ -21,7 +21,7 @@ with client.agent.v1.connect() as agent:
                 provider=AgentV1SettingsAgentListenProvider_V1(
                     type="deepgram", model="nova-3"
                 )
-            ),
+            ),  # type: ignore[arg-type]
             think=ThinkSettingsV1(
                 provider=ThinkSettingsV1Provider_OpenAi(
                     type="open_ai", model="gpt-4o-mini"
