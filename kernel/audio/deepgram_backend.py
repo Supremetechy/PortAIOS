@@ -32,7 +32,6 @@ try:
         ThinkSettingsV1Provider_OpenAi,
         ThinkSettingsV1Provider_Anthropic,
         ThinkSettingsV1Provider_Google,
-        ThinkSettingsV1Provider_ElevenLabs,
     )
     from deepgram.types.speak_settings_v1 import SpeakSettingsV1
     from deepgram.types.speak_settings_v1provider import SpeakSettingsV1Provider_Deepgram

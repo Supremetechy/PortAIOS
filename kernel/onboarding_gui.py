@@ -865,7 +865,8 @@ def start_eel_app():
     # Setup agent executor for agentic commands
     try:
         from kernel.agent_executor import AgentExecutor
-        _agent = AgentExecutor()
+        from kernel.kimi_agent import create_kimi_agent
+        _agent = AgentExecutor(llm=create_kimi_agent())
         logger.info("Agent executor initialized")
 
         @eel.expose
