@@ -6,6 +6,7 @@ Implements the safety layer for agentic security
 """
 
 import logging
+import os
 import re
 from typing import Dict, Any, Optional, List, Set
 from dataclasses import dataclass
@@ -115,9 +116,9 @@ class CommandValidator:
         # DELETE operations - highest risk
         if action == "delete":
             target = params.get("target", "")
-            
+
             # Check if targeting protected path
-            if any(target.startswith(p) for p in self.protected_paths):
+            if self._is_protected_path(target):
                 return ValidationResult(
                     is_valid=False,
                     risk_level=RiskLevel.CRITICAL,
@@ -148,7 +149,7 @@ class CommandValidator:
             dest = params.get("destination", "")
             
             # Prevent overwriting system files
-            if any(dest.startswith(p) for p in self.protected_paths):
+            if self._is_protected_path(dest):
                 return ValidationResult(
                     is_valid=False,
                     risk_level=RiskLevel.HIGH,
@@ -314,8 +315,34 @@ class CommandValidator:
             sanitized_params=intent.parameters
         )
     
+    def _is_protected_path(self, path: str) -> bool:
+        """
+        Check whether *path* is (or falls under) a protected system directory.
+
+        A naive `str.startswith` check against protected paths that include
+        bare "/" would match every absolute path, since "/" is a prefix of
+        all of them — that previously blocked all real file operations, not
+        just ones touching system directories. This normalizes the path and
+        requires an exact match or a real subdirectory relationship instead.
+        """
+        if not path:
+            return False
+
+        normalized = os.path.normpath(os.path.expanduser(path))
+
+        for protected in self.protected_paths:
+            protected_norm = os.path.normpath(protected)
+            if protected_norm == "/":
+                if normalized == "/":
+                    return True
+                continue
+            if normalized == protected_norm or normalized.startswith(protected_norm + os.sep):
+                return True
+
+        return False
+
     # Sanitization methods
-    
+
     def _sanitize_paths(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize file paths to prevent injection"""
         sanitized = params.copy()

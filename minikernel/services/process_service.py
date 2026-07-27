@@ -54,7 +54,12 @@ class ProcessService:
             "terminal": ["terminal", "gnome-terminal", "konsole", "xterm"],
             "editor": ["code", "vim", "emacs", "nano", "gedit"]
         }
-        
+
+        # Voice-friendly priority levels mapped to OS nice values.
+        # Negative (higher-priority) values typically require elevated
+        # privileges and will fail with AccessDenied on most systems.
+        self._nice_levels = {"low": 10, "normal": 0, "high": -10}
+
         logger.info("Process Service created")
     
     def initialize(self) -> None:
@@ -206,6 +211,34 @@ class ProcessService:
             logger.error(f"Failed to start {command}: {e}")
             return None
     
+    def set_priority(self, name: str, priority: str = "normal") -> bool:
+        """
+        Set a process's scheduling priority via OS nice value
+
+        Args:
+            name: Process name or alias
+            priority: 'low', 'normal', or 'high'
+
+        Returns:
+            True if successful
+        """
+        proc_info = self.find_process(name)
+
+        if not proc_info:
+            logger.warning(f"Process not found: {name}")
+            return False
+
+        nice_value = self._nice_levels.get(priority, 0)
+
+        try:
+            process = psutil.Process(proc_info.pid)
+            process.nice(nice_value)
+            logger.info(f"Set priority of '{name}' (pid={proc_info.pid}) to {priority} (nice={nice_value})")
+            return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+            logger.error(f"Failed to set priority for {name}: {e}")
+            return False
+
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         """Get detailed info about a specific process"""
         try:

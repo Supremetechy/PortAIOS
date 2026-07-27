@@ -106,8 +106,11 @@ class IntentParser:
         Returns:
             IntentResult with parsed intent
         """
-        text = text.strip().lower()
-        
+        # Keep original case so extracted paths/names/packages stay accurate
+        # (e.g. on case-sensitive filesystems); branch matching below is
+        # case-insensitive via re.IGNORECASE.
+        text = text.strip()
+
         # Update context
         if context:
             self.context.update(context)
@@ -167,6 +170,7 @@ class IntentParser:
             r"|(?:what|which)\s+files?.*?(?:edit|modif|chang)"
             r"|files?\s+(?:i\s+)?(?:edit|modif|chang)",
             text,
+            re.IGNORECASE,
         ):
             file_query = self._extract_file_query(text)
             time_filter = self._extract_time_filter(text)
@@ -184,7 +188,7 @@ class IntentParser:
             )
         
         # Move file
-        if match := re.search(r"move|mv", text):
+        if match := re.search(r"move|mv", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.FILE_OPERATION,
                 action=FileAction.MOVE.value,
@@ -195,9 +199,9 @@ class IntentParser:
                 confidence=0.85,
                 raw_text=text
             )
-        
+
         # Copy file
-        if match := re.search(r"copy|cp|duplicate", text):
+        if match := re.search(r"copy|cp|duplicate", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.FILE_OPERATION,
                 action=FileAction.COPY.value,
@@ -208,9 +212,9 @@ class IntentParser:
                 confidence=0.85,
                 raw_text=text
             )
-        
+
         # Delete file
-        if match := re.search(r"delete|remove|rm|trash", text):
+        if match := re.search(r"delete|remove|rm|trash", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.FILE_OPERATION,
                 action=FileAction.DELETE.value,
@@ -221,40 +225,42 @@ class IntentParser:
                 confidence=0.9,
                 raw_text=text
             )
-        
+
         # List files
-        if match := re.search(r"list|show.*?files|ls", text):
+        if match := re.search(r"list|show.*?files|ls", text, re.IGNORECASE):
+            text_lower = text.lower()
             return IntentResult(
                 intent_type=IntentType.FILE_OPERATION,
                 action=FileAction.LIST.value,
                 parameters={
                     "path": self._extract_location(text) or ".",
-                    "recursive": "recursive" in text or "all" in text
+                    "recursive": "recursive" in text_lower or "all" in text_lower
                 },
                 confidence=0.85,
                 raw_text=text
             )
-        
+
         return None
-    
+
     def _match_process_control(self, text: str) -> Optional[IntentResult]:
         """Match process control patterns"""
-        
+
         # Kill/stop process
-        if match := re.search(r"kill|stop|terminate|close", text):
+        if match := re.search(r"kill|stop|terminate|close", text, re.IGNORECASE):
+            text_lower = text.lower()
             return IntentResult(
                 intent_type=IntentType.PROCESS_CONTROL,
                 action=ProcessAction.STOP.value,
                 parameters={
                     "process": self._extract_process_name(text),
-                    "force": "force" in text or "kill" in text
+                    "force": "force" in text_lower or "kill" in text_lower
                 },
                 confidence=0.9,
                 raw_text=text
             )
-        
+
         # Start process
-        if match := re.search(r"start|launch|run|open", text):
+        if match := re.search(r"start|launch|run|open", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PROCESS_CONTROL,
                 action=ProcessAction.START.value,
@@ -265,21 +271,21 @@ class IntentParser:
                 confidence=0.85,
                 raw_text=text
             )
-        
+
         # List processes
-        if match := re.search(r"list.*?processes?|show.*?(?:running|processes?)|ps\b|top\b", text):
+        if match := re.search(r"list.*?processes?|show.*?(?:running|processes?)|ps\b|top\b", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PROCESS_CONTROL,
                 action=ProcessAction.LIST.value,
                 parameters={
-                    "filter": self._extract_process_name(text) if "filter" in text else None
+                    "filter": self._extract_process_name(text) if "filter" in text.lower() else None
                 },
                 confidence=0.9,
                 raw_text=text
             )
-        
+
         # Change priority
-        if match := re.search(r"prioritize|priority|nice", text):
+        if match := re.search(r"prioritize|priority|nice", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PROCESS_CONTROL,
                 action=ProcessAction.PRIORITY.value,
@@ -290,22 +296,18 @@ class IntentParser:
                 confidence=0.8,
                 raw_text=text
             )
-        
+
         return None
-    
+
     def _match_system_info(self, text: str) -> Optional[IntentResult]:
-        """Match system info queries"""
-        
-        if match := re.search(r"memory|ram|usage", text):
-            return IntentResult(
-                intent_type=IntentType.SYSTEM_INFO,
-                action="memory_info",
-                parameters={},
-                confidence=0.9,
-                raw_text=text
-            )
-        
-        if match := re.search(r"disk|storage|space", text):
+        """Match system info queries
+
+        Order matters: disk/cpu are checked before the generic memory/usage
+        catch-all, since queries like "disk usage" or "cpu usage" would
+        otherwise match the bare "usage" keyword in the memory pattern.
+        """
+
+        if match := re.search(r"\bdisk\b|\bstorage\b|\bspace\b", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.SYSTEM_INFO,
                 action="disk_info",
@@ -313,8 +315,8 @@ class IntentParser:
                 confidence=0.9,
                 raw_text=text
             )
-        
-        if match := re.search(r"cpu|processor|load", text):
+
+        if match := re.search(r"\bcpu\b|\bprocessor\b|\bload\b", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.SYSTEM_INFO,
                 action="cpu_info",
@@ -322,8 +324,17 @@ class IntentParser:
                 confidence=0.9,
                 raw_text=text
             )
-        
-        if match := re.search(r"status|health|uptime", text):
+
+        if match := re.search(r"\bmemory\b|\bram\b|\busage\b", text, re.IGNORECASE):
+            return IntentResult(
+                intent_type=IntentType.SYSTEM_INFO,
+                action="memory_info",
+                parameters={},
+                confidence=0.9,
+                raw_text=text
+            )
+
+        if match := re.search(r"status|health|uptime", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.SYSTEM_INFO,
                 action="system_status",
@@ -332,7 +343,7 @@ class IntentParser:
                 raw_text=text
             )
 
-        if match := re.search(r"system\s+info|show\s+system|sysinfo|hardware\s+info", text):
+        if match := re.search(r"system\s+info|show\s+system|sysinfo|hardware\s+info", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.SYSTEM_INFO,
                 action="system_status",
@@ -342,11 +353,11 @@ class IntentParser:
             )
 
         return None
-    
+
     def _match_package_management(self, text: str) -> Optional[IntentResult]:
         """Match package management commands"""
-        
-        if match := re.search(r"install|download.*?(?:and install)", text):
+
+        if match := re.search(r"install|download.*?(?:and install)", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PACKAGE_MANAGEMENT,
                 action="install",
@@ -356,8 +367,8 @@ class IntentParser:
                 confidence=0.9,
                 raw_text=text
             )
-        
-        if match := re.search(r"uninstall|remove.*?package", text):
+
+        if match := re.search(r"uninstall|remove.*?package", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PACKAGE_MANAGEMENT,
                 action="uninstall",
@@ -367,8 +378,8 @@ class IntentParser:
                 confidence=0.9,
                 raw_text=text
             )
-        
-        if match := re.search(r"update.*?(?:all|packages|software)", text):
+
+        if match := re.search(r"update.*?(?:all|packages|software)", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.PACKAGE_MANAGEMENT,
                 action="update_all",
@@ -376,13 +387,13 @@ class IntentParser:
                 confidence=0.95,
                 raw_text=text
             )
-        
+
         return None
-    
+
     def _match_search(self, text: str) -> Optional[IntentResult]:
         """Match search queries"""
-        
-        if match := re.search(r"search|look for|find", text):
+
+        if match := re.search(r"search|look for|find", text, re.IGNORECASE):
             return IntentResult(
                 intent_type=IntentType.SEARCH,
                 action="search",
@@ -396,7 +407,14 @@ class IntentParser:
         return None
     
     # Helper extraction methods
-    
+
+    def _split_after_keyword(self, text: str, keyword: str) -> Optional[List[str]]:
+        """Case-insensitively split *text* on *keyword*, preserving the
+        original case of the surrounding text (unlike str.split, which
+        requires an exact-case match)."""
+        parts = re.split(re.escape(keyword), text, maxsplit=1, flags=re.IGNORECASE)
+        return parts if len(parts) > 1 else None
+
     def _extract_file_query(self, text: str) -> str:
         """Extract file/document reference from text"""
         # Quoted strings have highest priority
@@ -415,90 +433,91 @@ class IntentParser:
 
         # Extract after keywords
         for keyword in ["file", "document", "called", "named"]:
-            if keyword in text:
-                parts = text.split(keyword)
-                if len(parts) > 1:
-                    return parts[1].strip().split()[0]
+            if parts := self._split_after_keyword(text, keyword):
+                return parts[1].strip().split()[0]
 
         return ""
-    
+
     def _extract_time_filter(self, text: str) -> Optional[Dict[str, Any]]:
         """Extract time-based filter (e.g., 'yesterday', 'last week')"""
-        
-        if "yesterday" in text:
+        text_lower = text.lower()
+
+        if "yesterday" in text_lower:
             return {"days_ago": 1}
-        elif "today" in text:
+        elif "today" in text_lower:
             return {"days_ago": 0}
-        elif match := re.search(r"last\s+(\d+)\s+days?", text):
+        elif match := re.search(r"last\s+(\d+)\s+days?", text, re.IGNORECASE):
             return {"days_ago": int(match.group(1))}
-        elif "last week" in text:
+        elif "last week" in text_lower:
             return {"days_ago": 7}
-        elif "last month" in text:
+        elif "last month" in text_lower:
             return {"days_ago": 30}
-        
+
         return None
-    
+
     def _extract_location(self, text: str) -> Optional[str]:
         """Extract file location/path"""
         # Look for folder names
         for keyword in ["in", "from", "at"]:
-            if keyword in text:
-                parts = text.split(keyword)
-                if len(parts) > 1:
-                    location = parts[-1].strip().split()[0]
-                    if location:
-                        return location
-        
+            if parts := self._split_after_keyword(text, keyword):
+                location = parts[-1].strip().split()[0]
+                if location:
+                    return location
+
         return None
-    
+
     def _extract_destination(self, text: str) -> str:
         """Extract destination path"""
         for keyword in ["to", "into", "destination"]:
-            if keyword in text:
-                parts = text.split(keyword)
-                if len(parts) > 1:
-                    return parts[-1].strip().split()[0]
+            if parts := self._split_after_keyword(text, keyword):
+                return parts[-1].strip().split()[0]
         return ""
-    
+
     def _extract_process_name(self, text: str) -> str:
         """Extract process/application name"""
-        # Remove common words
-        stop_words = {"the", "a", "an", "this", "that", "process", "application", "program"}
+        # Remove common words and the action verbs the process-control
+        # patterns themselves match on (e.g. "kill chrome" should yield
+        # "chrome", not "kill").
+        stop_words = {
+            "the", "a", "an", "this", "that", "process", "application", "program",
+            "kill", "stop", "terminate", "close", "force", "forcefully",
+            "start", "launch", "run", "open",
+            "list", "show", "running", "processes",
+            "prioritize", "priority", "nice",
+        }
         words = text.split()
-        
+
         for word in words:
-            if word not in stop_words and len(word) > 2:
+            if word.lower() not in stop_words and len(word) > 2:
                 return word
-        
+
         return ""
-    
+
     def _extract_priority(self, text: str) -> str:
         """Extract priority level"""
-        if "high" in text or "urgent" in text:
+        text_lower = text.lower()
+        if "high" in text_lower or "urgent" in text_lower:
             return "high"
-        elif "low" in text:
+        elif "low" in text_lower:
             return "low"
         return "normal"
-    
+
     def _extract_package_name(self, text: str) -> str:
         """Extract package name"""
         # Look for quoted strings or words after 'install'
         if match := re.search(r'"([^"]+)"', text):
             return match.group(1)
-        
+
         for keyword in ["install", "package", "called"]:
-            if keyword in text:
-                parts = text.split(keyword)
-                if len(parts) > 1:
-                    return parts[1].strip().split()[0]
-        
+            if parts := self._split_after_keyword(text, keyword):
+                return parts[1].strip().split()[0]
+
         return ""
-    
+
     def _extract_search_query(self, text: str) -> str:
         """Extract search query"""
         for keyword in ["search for", "look for", "find"]:
-            if keyword in text:
-                parts = text.split(keyword)
+            if parts := self._split_after_keyword(text, keyword):
                 if len(parts) > 1:
                     return parts[1].strip()
         return text

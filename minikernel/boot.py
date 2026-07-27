@@ -17,10 +17,13 @@ sys.path.insert(0, str(MINIKERNEL_ROOT))
 from minikernel.core.microkernel import MicroKernel, ServicePriority
 from minikernel.services.filesystem_service import FileSystemService
 from minikernel.services.process_service import ProcessService
+from minikernel.services.package_service import PackageService
 from minikernel.intent.intent_parser import IntentParser
+from minikernel.intent.command_validator import CommandValidator
 from minikernel.intent.execution_engine import ExecutionEngine
 from minikernel.security.sandbox import Sandbox
 from minikernel.security.capability_manager import CapabilityManager
+from minikernel.security.confirmation_loop import ConfirmationLoop, ConfirmationMode
 
 # Configure logging
 def _get_log_handler():
@@ -124,18 +127,28 @@ def boot_kernel(mode='voice', environment='development'):
     # Process service
     proc_service = ProcessService()
     kernel.register_service("process", proc_service, priority=ServicePriority.CRITICAL)
-    
+
+    # Package service
+    package_service = PackageService()
+    kernel.register_service("package", package_service, priority=ServicePriority.NORMAL)
+
     # Security services
     sandbox = Sandbox()
     kernel.register_service("sandbox", sandbox, priority=ServicePriority.HIGH)
-    
+
     capability_mgr = CapabilityManager()
     kernel.register_service("capabilities", capability_mgr, priority=ServicePriority.HIGH)
-    
+
+    validator = CommandValidator()
+    kernel.register_service("validator", validator, priority=ServicePriority.HIGH)
+
+    confirmation_loop = ConfirmationLoop(mode=ConfirmationMode.TEXT)
+    kernel.register_service("confirmation", confirmation_loop, priority=ServicePriority.HIGH)
+
     # Intent parsing and execution
     intent_parser = IntentParser()
     kernel.register_service("intent_parser", intent_parser, priority=ServicePriority.NORMAL)
-    
+
     execution_engine = ExecutionEngine(kernel)
     kernel.register_service("execution_engine", execution_engine, priority=ServicePriority.NORMAL)
     
@@ -151,8 +164,8 @@ def boot_kernel(mode='voice', environment='development'):
     
     # Print status
     stats = kernel.get_stats()
-    logger.info(f"Uptime: {stats['uptime']:.2f}s")
-    logger.info(f"Services: {stats['services_running']}/{stats['services_total']}")
+    logger.info(f"Uptime: {stats['uptime_seconds']:.2f}s")
+    logger.info(f"Services running: {stats['services']}/{len(kernel.services)}")
     logger.info(f"State: {stats['state']}")
     
     # Start appropriate interface
@@ -172,17 +185,25 @@ def start_voice_interface(kernel, environment):
     
     try:
         from minikernel.ai.voice_pipeline import VoicePipeline
-        
+
         voice = VoicePipeline()
         logger.info("Voice pipeline initialized")
-        
+
+        intent_parser = kernel.get_service("intent_parser")
+        validator = kernel.get_service("validator")
+        execution_engine = kernel.get_service("execution_engine")
+        confirmation_loop = kernel.get_service("confirmation")
+        if confirmation_loop:
+            confirmation_loop.set_mode(ConfirmationMode.VOICE)
+            confirmation_loop.set_voice_pipeline(voice)
+
         print("\n" + "=" * 60)
         print("MiniKernel Voice Interface Ready")
         print("=" * 60)
         print("Speak commands to control the system")
         print("Press Ctrl+C to exit")
         print("=" * 60 + "\n")
-        
+
         # Voice loop
         while True:
             try:
@@ -192,26 +213,49 @@ def start_voice_interface(kernel, environment):
                     # Transcribe
                     text = voice.transcribe(audio)
                     logger.info(f"User said: {text}")
-                    
-                    # Parse intent
-                    intent_parser = kernel.get_service("intent_parser")
+
+                    # Parse and validate intent
                     intent = intent_parser.parse(text)
-                    
+                    validation = validator.validate(intent)
+
+                    if not validation.is_valid:
+                        response = "; ".join(validation.errors) or "I can't do that."
+                        logger.warning(f"Blocked: {response}")
+                        voice.speak(response)
+                        continue
+
+                    confirmed = True
+                    if validation.requires_confirmation:
+                        confirmed = confirmation_loop.request_confirmation(
+                            prompt=validation.confirmation_prompt or text,
+                            command=text,
+                            risk_level=validation.risk_level.value,
+                        )
+                        if not confirmed:
+                            voice.speak("Cancelled.")
+                            continue
+
                     # Execute
-                    execution_engine = kernel.get_service("execution_engine")
-                    result = execution_engine.execute(intent)
-                    
+                    result = execution_engine.execute(intent, validation, confirmed=confirmed)
+
                     # Respond
-                    response = result.get('message', 'Command executed')
+                    if result.success:
+                        response = (
+                            result.output.get("message")
+                            if isinstance(result.output, dict)
+                            else "Done"
+                        ) or "Done"
+                    else:
+                        response = result.error or "That failed."
                     logger.info(f"Response: {response}")
                     voice.speak(response)
-                    
+
             except KeyboardInterrupt:
                 logger.info("Voice interface interrupted")
                 break
             except Exception as e:
                 logger.error(f"Voice interface error: {e}", exc_info=True)
-                
+
     except ImportError:
         logger.warning("Voice pipeline not available, falling back to CLI")
         start_cli_interface(kernel, environment)
@@ -225,41 +269,76 @@ def start_cli_interface(kernel, environment):
     print("MiniKernel Command-Line Interface")
     print("=" * 60)
     print("Type commands in natural language")
+    print("Prefix with 'agent:' for multi-step goals, e.g. 'agent: install numpy and then show memory usage'")
     print("Type 'help' for assistance, 'exit' to quit")
     print("=" * 60 + "\n")
-    
+
     intent_parser = kernel.get_service("intent_parser")
+    validator = kernel.get_service("validator")
     execution_engine = kernel.get_service("execution_engine")
-    
+    confirmation_loop = kernel.get_service("confirmation")
+
+    def cli_confirm(prompt: str, command: str, risk_level: str) -> bool:
+        return confirmation_loop.request_confirmation(prompt, command, risk_level)
+
+    from minikernel.ai.agent_loop import AgentLoop
+    agent_loop = AgentLoop(
+        kernel,
+        confirm_fn=lambda prompt, risk_level: cli_confirm(prompt, prompt, risk_level),
+    )
+
     while True:
         try:
             # Get input
             user_input = input("minikernel> ").strip()
-            
+
             if not user_input:
                 continue
-            
+
             if user_input.lower() in ('exit', 'quit'):
                 logger.info("CLI exit requested")
                 break
-            
+
             if user_input.lower() == 'help':
                 print_help()
                 continue
-            
-            # Parse and execute
+
+            if user_input.lower().startswith("agent:"):
+                goal = user_input.split(":", 1)[1].strip()
+                run_result = agent_loop.run(goal)
+                print(run_result.summary())
+                continue
+
+            # Parse and validate
             intent = intent_parser.parse(user_input)
-            result = execution_engine.execute(intent)
-            
+            validation = validator.validate(intent)
+
+            if not validation.is_valid:
+                print(f"✗ {'; '.join(validation.errors) or 'Invalid command'}")
+                continue
+
+            confirmed = True
+            if validation.requires_confirmation:
+                confirmed = cli_confirm(
+                    validation.confirmation_prompt or user_input, user_input, validation.risk_level.value
+                )
+                if not confirmed:
+                    print("Cancelled.")
+                    continue
+
+            # Execute
+            result = execution_engine.execute(intent, validation, confirmed=confirmed)
+
             # Display result
-            if result.get('success'):
-                print(f"✓ {result.get('message', 'Done')}")
+            if result.success:
+                message = result.output.get("message") if isinstance(result.output, dict) else None
+                print(f"✓ {message or 'Done'}")
             else:
-                print(f"✗ {result.get('error', 'Failed')}")
-            
-            if result.get('output'):
-                print(result['output'])
-                
+                print(f"✗ {result.error or 'Failed'}")
+
+            if result.output:
+                print(result.output)
+
         except KeyboardInterrupt:
             print("\nUse 'exit' to quit")
         except EOFError:
@@ -325,11 +404,17 @@ System Commands:
   - status            Show kernel status
   - services          List all services
 
+Multi-step goals:
+  Prefix a goal with 'agent:' to have it split into steps and run
+  autonomously. Failed steps are diagnosed and, where possible,
+  self-corrected (e.g. a missing package is installed) before retrying.
+
 Examples:
   minikernel> find all python files
   minikernel> list processes using more than 100MB
   minikernel> show files modified today
   minikernel> what is the system uptime
+  minikernel> agent: install numpy and then show memory usage
 """
     print(help_text)
 
